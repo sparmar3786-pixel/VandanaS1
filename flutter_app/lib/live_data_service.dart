@@ -44,6 +44,8 @@ class LiveDataService {
 
   Map<String, String> get _headers => <String, String>{
         'Accept': 'application/json',
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        'Pragma': 'no-cache',
         'User-Agent': 'Parmar-Trading-Flutter/1.0',
         if (token.isNotEmpty) 'x-token': token,
       };
