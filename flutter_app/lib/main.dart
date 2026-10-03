@@ -317,10 +317,10 @@ class _TerminalState extends State<Terminal> {
           await fetchCommodities();
           break;
         case 3:
-          await Future.wait<void>([fetchTerminal(), refreshStrategy()];
+          await Future.wait<void>([fetchTerminal(), refreshStrategy()]);
           break;
         case 4:
-          await Future.wait<void>([fetchOptionRows(), fetchOIBuild()];
+          await Future.wait<void>([fetchOptionRows(), fetchOIBuild()]);
           break;
         case 6:
           await fetchCandles();
@@ -347,7 +347,7 @@ class _TerminalState extends State<Terminal> {
         case 24:
         case 25:
         case 26:
-          await Future.wait<void>([fetchTerminal(), fetchOptionRows()];
+          await Future.wait<void>([fetchTerminal(), fetchOptionRows()]);
           break;
         case 27:
           await fetchStrategy377();
@@ -362,7 +362,7 @@ class _TerminalState extends State<Terminal> {
           await Future.wait<void>([
             fetchLiveSnapshot(),
             fetchIndices(),
-          ];
+          ]);
       }
 
       if (mounted) {
