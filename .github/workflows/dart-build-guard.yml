@@ -7,13 +7,11 @@ on:
       - 'flutter_app/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
-      - '.github/workflows/**'
   pull_request:
     paths:
       - 'flutter_app/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
-      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
@@ -71,7 +69,8 @@ jobs:
       - name: Analyze Dart source
         working-directory: flutter_app
         run: |
-          flutter analyze --no-fatal-warnings
+          set -o pipefail
+          flutter analyze --no-fatal-warnings 2>&1 | tee flutter-analyze.log
 
       - name: Run Flutter tests
         working-directory: flutter_app
