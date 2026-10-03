@@ -101,6 +101,43 @@ class LiveDataService {
     }
   }
 
+  Future<Map<String, dynamic>> postJson(
+    String path, {
+    Map<String, String>? query,
+    Map<String, dynamic>? body,
+    Duration timeout = defaultTimeout,
+  }) async {
+    final response = await _client
+        .post(
+          _uri(path, query),
+          headers: <String, String>{
+            ..._headers,
+            'Content-Type': 'application/json',
+          },
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(timeout);
+    final decoded = _decode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = decoded is Map<String, dynamic>
+          ? (decoded['detail'] ?? decoded['error'] ?? 'Request failed')
+          : 'Request failed';
+      throw LiveDataException(
+        statusCode: response.statusCode,
+        path: path,
+        message: detail.toString(),
+      );
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw LiveDataException(
+        statusCode: response.statusCode,
+        path: path,
+        message: 'Expected a JSON object.',
+      );
+    }
+    return decoded;
+  }
+
   Future<Map<String, dynamic>> getJson(
     String path, {
     Map<String, String>? query,
@@ -197,6 +234,9 @@ class LiveDataService {
 
   Future<Map<String, dynamic>> terminal() =>
       getJson('/v1/terminal');
+
+  Future<Map<String, dynamic>> clearCache() =>
+      postJson('/v1/angel/cache/clear');
 
   Future<Map<String, dynamic>> strategyRefresh({
     String? index,
