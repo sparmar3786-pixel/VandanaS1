@@ -198,31 +198,41 @@ class _TerminalState extends State<Terminal> {
 
   Future<void> fetchNews() async {
     try {
-      final d = await liveDataService?.getJson('/v1/live/news', query: <String, String>{'q': 'NIFTY India'});
-      if (d != null && mounted && d['items'] is List) {
-        setState(() => liveNews = List<dynamic>.from(d['items'] as List));
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.liveNews(query: 'NIFTY India');
+      final items = d['items'];
+      if (mounted && items is List) {
+        setState(() => liveNews = List<dynamic>.from(items));
       }
     } catch (_) {}
   }
 
   Future<void> fetchTerminal() async {
     try {
-      final response = await http.get(
-        backendUri('/v1/terminal'),
-        headers: <String,String>{'x-token': apiToken},
-      ).timeout(const Duration(seconds: 5));
+      final service = liveDataService;
+      if (service == null) return;
+      final decoded = await service.terminal();
       if (!mounted) return;
-      dynamic decoded;
-      try { decoded = jsonDecode(response.body); } catch (_) { decoded = null; }
-      final conn = decoded is Map<String,dynamic> ? decoded['connection'] : null;
+
+      final conn = decoded['connection'];
       final angel = conn is Map && conn['angel'] == true;
+      final server = conn is Map && conn['server'] == true;
+
       setState(() {
-        terminalData = decoded is Map<String,dynamic> ? decoded : null;
-        final s = terminalData?['signals'];
-        final m = terminalData?['nse_mcp'];
-        signal = s is Map<String,dynamic> ? s : null;
-        connection = response.statusCode == 200 && conn is Map && conn['server'] == true && conn['angel'] == true ? 'Connected' : response.statusCode == 200 && conn is Map && conn['server'] == true ? 'Backend connected / Angel not connected' : 'HTTP ' + response.statusCode.toString();
-        nseMcpStatus = m is Map && m['connected'] == true ? 'Connected' : 'Not connected';
+        terminalData = decoded;
+        final s = decoded['signals'];
+        final m = decoded['nse_mcp'];
+        signal = s is Map<String, dynamic> ? s : null;
+        connection = server && angel
+            ? 'Connected'
+            : server
+                ? 'Backend connected / Angel not connected'
+                : 'Backend not connected';
+        nseMcpStatus = m is Map && m['connected'] == true
+            ? 'Connected'
+            : 'Not connected';
+        liveLastUpdated = DateTime.now().toLocal().toString().substring(11, 19);
       });
       if (angel) await fetchAngelMarket();
     } catch (_) {
@@ -404,25 +414,38 @@ class _TerminalState extends State<Terminal> {
   }
   Future<void> fetchIndices() async {
     try {
-      final r=await http.get(backendUri('/v1/angel/indices'),headers:<String,String>{'x-token':apiToken}).timeout(const Duration(seconds:8));
-      if(r.statusCode==200){final d=jsonDecode(r.body);final rows=d is Map&&d['data'] is List?d['data']:<dynamic>[];if(mounted)setState(()=>liveIndices=rows is List?rows:<dynamic>[]);}
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.angelIndices();
+      final rows = d['data'];
+      if (mounted && rows is List) {
+        setState(() => liveIndices = List<dynamic>.from(rows));
+      }
     } catch (_) {}
   }
 
   Future<void> fetchCommodities() async {
     try {
-      final r=await http.get(backendUri('/v1/angel/commodities'),headers:<String,String>{'x-token':apiToken}).timeout(const Duration(seconds:10));
-      if(r.statusCode==200){final d=jsonDecode(r.body);final rows=d is Map&&d['data'] is Map&&d['data']['fetched'] is List?d['data']['fetched']:<dynamic>[];if(mounted)setState(()=>liveCommodities=rows is List?rows:<dynamic>[]);}
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.angelCommodities();
+      final data = d['data'];
+      final rows = data is Map ? data['fetched'] : null;
+      if (mounted && rows is List) {
+        setState(() => liveCommodities = List<dynamic>.from(rows));
+      }
     } catch (_) {}
   }
 
   Future<void> fetchAngelMarket() async {
     try {
-      final r=await http.get(backendUri('/v1/angel/market'),headers:<String,String>{'x-token':apiToken}).timeout(const Duration(seconds:8));
-      if(r.statusCode==200){
-        final d=jsonDecode(r.body);
-        final rows=d is Map && d['data'] is Map ? (d['data']['fetched'] ?? <dynamic>[]) : <dynamic>[];
-        if(mounted) setState(()=>liveMarket=rows is List ? rows : <dynamic>[]);
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.angelMarket();
+      final data = d['data'];
+      final rows = data is Map ? data['fetched'] : null;
+      if (mounted && rows is List) {
+        setState(() => liveMarket = List<dynamic>.from(rows));
       }
     } catch (_) {}
   }
@@ -439,42 +462,72 @@ class _TerminalState extends State<Terminal> {
   }
 
   Future<void> fetchCandles() async {
-    if(chartBusy)return;
-    chartBusy=true;
-    if(mounted)setState(()=>angelDataBusy=true);
+    if (chartBusy) return;
+    chartBusy = true;
+    if (mounted) setState(() => angelDataBusy = true);
+
     try {
-      final u=backendUrl+'/v1/angel/candles?exchange='+selectedChartExchange+'&token='+selectedChartToken+'&interval='+selectedInterval+'&days=1';
-      final r=await http.get(Uri.parse(u),headers:<String,String>{'x-token':apiToken}).timeout(const Duration(seconds:12));
-      if(r.statusCode==200){
-        final d=jsonDecode(r.body);
-        final rows=d is Map && d['data'] is List ? d['data'] : <dynamic>[];
-        if(mounted) { setState(()=>liveCandles=rows is List ? rows : <dynamic>[]); await pushProChartData(); }
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.angelCandles(
+        exchange: selectedChartExchange,
+        token: selectedChartToken,
+        interval: selectedInterval,
+        days: 1,
+      );
+      final rows = d['data'];
+      if (mounted && rows is List) {
+        setState(() => liveCandles = List<dynamic>.from(rows));
+        await pushProChartData();
       }
-    } catch (_) {} finally { chartBusy=false; if(mounted) setState(()=>angelDataBusy=false); }
+    } catch (_) {
+      // UI keeps the last known candle set instead of flashing fake data.
+    } finally {
+      chartBusy = false;
+      if (mounted) setState(() => angelDataBusy = false);
+    }
   }
 
   Future<void> fetchOptionRows() async {
-    setState(()=>angelDataBusy=true);
+    if (angelDataBusy) return;
+    setState(() => angelDataBusy = true);
     try {
-      final r=await http.get(backendUri('/v1/angel/option-chain?symbol='+selectedOptionSymbol+'&count=10'),headers:<String,String>{'x-token':apiToken}).timeout(const Duration(seconds:15));
-      if(r.statusCode==200){
-        final d=jsonDecode(r.body);
-        final rows=d is Map && d['rows'] is List ? d['rows'] : <dynamic>[];
-        if(mounted) setState(() { liveOptionRows=rows is List ? rows : <dynamic>[]; optionSpot=d is Map ? d['spot'] : null; });
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.optionChain(
+        symbol: selectedOptionSymbol,
+        count: 10,
+      );
+      final rows = d['rows'];
+      if (mounted) {
+        setState(() {
+          liveOptionRows = rows is List ? List<dynamic>.from(rows) : <dynamic>[];
+          optionSpot = d['spot'];
+        });
       }
-    } catch (_) {} finally { if(mounted) setState(()=>angelDataBusy=false); }
+    } catch (_) {
+      // Keep previous live snapshot on transient backend failures.
+    } finally {
+      if (mounted) setState(() => angelDataBusy = false);
+    }
   }
 
   Future<void> fetchOIBuild() async {
-    setState(()=>angelDataBusy=true);
+    if (angelDataBusy) return;
+    setState(() => angelDataBusy = true);
     try {
-      final r=await http.get(backendUri('/v1/angel/oi-buildup?datatype=Long%20Built%20Up&expirytype=NEAR'),headers:<String,String>{'x-token':apiToken}).timeout(const Duration(seconds:12));
-      if(r.statusCode==200){
-        final d=jsonDecode(r.body);
-        final rows=d is Map && d['data'] is List ? d['data'] : <dynamic>[];
-        if(mounted) setState(()=>liveOIBuild=rows is List ? rows : <dynamic>[]);
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.oiBuildup();
+      final rows = d['data'];
+      if (mounted && rows is List) {
+        setState(() => liveOIBuild = List<dynamic>.from(rows));
       }
-    } catch (_) {} finally { if(mounted) setState(()=>angelDataBusy=false); }
+    } catch (_) {
+      // Preserve the last good OI snapshot.
+    } finally {
+      if (mounted) setState(() => angelDataBusy = false);
+    }
   }
 
   Widget indexCard(dynamic q) {
