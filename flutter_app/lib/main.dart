@@ -135,10 +135,12 @@ class _TerminalState extends State<Terminal> {
     liveSubscription?.cancel();
     liveChannel?.sink.close();
     alertService?.stop();
+    liveDataService?.close();
     super.dispose();
   }
 
   void startLiveConnection() {
+    liveDataService?.close();
     liveDataService = LiveDataService(backendUrl, apiToken);
     liveHttpTimer?.cancel();
     liveHttpTimer = Timer.periodic(const Duration(seconds: 10), (_) => fetchLiveSnapshot());
@@ -704,8 +706,10 @@ class _TerminalState extends State<Terminal> {
   Map<String,dynamic>? strategyRefresh;
   Future<void> refreshStrategy() async {
     try {
-      final r=await http.get(backendUri('/v1/strategy/refresh'),headers:<String,String>{'x-token':apiToken}).timeout(const Duration(seconds:12));
-      if(r.statusCode==200){final d=jsonDecode(r.body);if(mounted)setState(()=>strategyRefresh=d is Map<String,dynamic>?d:null);}
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.strategyRefresh();
+      if (mounted) setState(() => strategyRefresh = d);
     } catch (_) {}
   }
   Widget signals() {
@@ -764,12 +768,18 @@ class _TerminalState extends State<Terminal> {
   }
 
   Future<void> fetchStrategy() async {
-    if(strategyBusy)return;
-    strategyBusy=true;
-    try{
-      final r=await http.get(backendUri('/v1/strategy/refresh?index='+selectedOptionSymbol),headers:<String,String>{'x-token':apiToken}).timeout(const Duration(seconds:10));
-      if(r.statusCode==200){final d=jsonDecode(r.body);if(d is Map<String,dynamic> && mounted)setState(()=>strategyData=d);}
-    }catch(_){}finally{strategyBusy=false;}
+    if (strategyBusy) return;
+    strategyBusy = true;
+    try {
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.strategyRefresh(index: selectedOptionSymbol);
+      if (mounted) setState(() => strategyData = d);
+    } catch (_) {
+      // Preserve the last known strategy snapshot during transient failures.
+    } finally {
+      strategyBusy = false;
+    }
   }
 
   Widget strategiesPage() {
