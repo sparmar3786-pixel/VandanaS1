@@ -2,6 +2,10 @@ name: Build Parmar Trading APK
 on:
   push:
     branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - 'backend/**'
+      - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 
 concurrency:
@@ -29,7 +33,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          cache: false
+          cache: true
 
       - name: Create Android platform
         working-directory: flutter_app
