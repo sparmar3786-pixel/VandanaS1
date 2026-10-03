@@ -1138,48 +1138,245 @@ class _TerminalState extends State<Terminal> {
     Expanded(child: WebViewWidget(controller: proChartController)),
   ]);
 
-  Widget optionChain() => ListView(padding:const EdgeInsets.all(8),children:<Widget>[
-    const Text('Option Chain • Indian Indices',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)), const SizedBox(height:6),
-    Wrap(spacing:6,children:<Widget>[for(final s in const['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX','BANKEX'])FilterChip(label:Text(s),selected:selectedOptionSymbol==s,onSelected:(_){setState(()=>selectedOptionSymbol=s);fetchOptionRows();})]),
-    const SizedBox(height:8), if(liveOptionRows.isEmpty) infoCard('Option chain','Select an index and refresh to load live CE/PE.',Colors.orange),
-    ..._optionChainCards(), FilledButton.icon(onPressed:fetchOptionRows,icon:const Icon(Icons.refresh),label:Text(angelDataBusy?'LOADING...':'REFRESH LIVE OPTION CHAIN')),
-  ]);
+  Widget optionChain() {
+    final spot = double.tryParse((optionSpot ?? "").toString());
 
-  List<Widget> _optionChainCards() {
-    final byStrike=<String,Map<String,dynamic>>{};
-    for(final r in liveOptionRows.where((x)=>x is Map)){
-      final key=(r['strike']??'-').toString();
-      byStrike.putIfAbsent(key,()=>{}); byStrike[key]![r['type'].toString()]=r;
+    return RefreshIndicator(
+      onRefresh: () => refreshCurrentPage(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(8),
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Expanded(
+                child: Text("OPTION CHAIN • PRO", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              ),
+              IconButton(
+                tooltip: "Refresh chain",
+                onPressed: pageBusy ? null : refreshCurrentPage,
+                icon: Icon(pageBusy ? Icons.sync : Icons.refresh),
+              ),
+              IconButton(
+                tooltip: "Clear chain cache",
+                onPressed: pageBusy ? null : () => refreshCurrentPage(clearServerCache: true),
+                icon: const Icon(Icons.delete_sweep),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: <Widget>[
+                for (final sym in const <String>["NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX","BANKEX"])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(sym),
+                      selected: selectedOptionSymbol == sym,
+                      onSelected: (selected) {
+                        if (!selected) return;
+                        setState(() => selectedOptionSymbol = sym);
+                        refreshCurrentPage(clearServerCache: true);
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(child: _chainMetric("SPOT", optionSpot)),
+                      Expanded(child: _chainMetric("ATM", optionSpot)),
+                      Expanded(child: _chainMetric("EXPIRY", optionExpiry)),
+                      Expanded(child: _chainMetric("ROWS", liveOptionRows.length)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: <Widget>[
+                      const Text("STRIKES"),
+                      const SizedBox(width: 8),
+                      for (final count in const <int>[7, 15, 25])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text("±" + count.toString()),
+                            selected: optionStrikeCount == count,
+                            onSelected: (selected) {
+                              if (!selected) return;
+                              setState(() => optionStrikeCount = count);
+                              refreshCurrentPage();
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(cacheStatus, style: const TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (liveOptionRows.isEmpty)
+            infoCard(
+              "OPTION CHAIN",
+              "No live rows received. Check Angel One session and refresh.",
+              Colors.orange,
+            )
+          else
+            _proOptionTable(spot),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: pageBusy ? null : refreshCurrentPage,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text("REFRESH"),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: pageBusy ? null : () => refreshCurrentPage(clearServerCache: true),
+                  icon: const Icon(Icons.delete_sweep),
+                  label: const Text("CLEAR CACHE"),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chainMetric(String label, dynamic value) {
+    final text = value == null || value.toString().trim().isEmpty
+        ? "DATA UNAVAILABLE"
+        : value.toString();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(label, style: const TextStyle(fontSize: 10)),
+          const SizedBox(height: 2),
+          Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _proOptionTable(double? spot) {
+    final byStrike = <double, Map<String, dynamic>>{};
+    for (final raw in liveOptionRows) {
+      if (raw is! Map) continue;
+      final row = Map<String, dynamic>.from(raw);
+      final strike = double.tryParse((row["strike"] ?? "").toString());
+      if (strike == null) continue;
+      byStrike.putIfAbsent(strike, () => <String, dynamic>{})
+        [(row["type"] ?? "").toString().toUpperCase()] = row;
     }
-    final keys=byStrike.keys.toList()..sort((a,b)=>(double.tryParse(a)??0).compareTo(double.tryParse(b)??0));
-    return keys.map((strike){
-      final ce=byStrike[strike]!['CE']; final pe=byStrike[strike]!['PE'];
-      final atm=optionSpot!=null && (double.tryParse(strike)??-1)==(double.tryParse(optionSpot.toString())??-2);
-      return Card(child:Padding(padding:const EdgeInsets.all(8),child:Column(children:<Widget>[
-        Container(width:double.infinity,padding:const EdgeInsets.symmetric(vertical:5),color:Theme.of(context).brightness==Brightness.dark?Colors.white.withValues(alpha: .08):Colors.black.withValues(alpha: .04),child:Center(child:Text(atm?'SPOT  '+strike+'  SPOT':strike,style:const TextStyle(fontWeight:FontWeight.bold)))),
-        const SizedBox(height:6), Row(crossAxisAlignment:CrossAxisAlignment.start,children:<Widget>[
-          Expanded(child:_optionCell(ce,'CE')), const SizedBox(width:8), Expanded(child:_optionCell(pe,'PE')),
-        ]),
-      ])));
-    }).toList();
-  }
 
-  Widget _optionCell(dynamic r,String side) {
-    if(r==null)return Card(child:Padding(padding:const EdgeInsets.all(8),child:Text(side+' —')));
-    final ch=double.tryParse(r['priceChange']?.toString() ?? r['netChange']?.toString() ?? '0')??0;
-    final oiCh=double.tryParse(r['oiChangePct']?.toString() ?? '0')??0;
-    final color=ch>0?Colors.green:ch<0?Colors.red:Colors.blue;
-    final oiArrow=oiCh>0?'↑':oiCh<0?'↓':'—'; final priceArrow=ch>0?'↑':ch<0?'↓':'—';
-    return Column(crossAxisAlignment:CrossAxisAlignment.start,children:<Widget>[
-      Text(side,style:TextStyle(fontWeight:FontWeight.bold,color:side=='CE'?Colors.green:Colors.red)),
-      Text('LTP '+(r['ltp']??'-').toString()+'  OI '+(r['oi']??'-').toString()),
-      Text('OI $oiArrow  PRICE $priceArrow',style:TextStyle(color:color,fontWeight:FontWeight.bold)),
-      Text('Δ '+(r['delta']??'-').toString()+'  Γ '+(r['gamma']??'-').toString()),
-      Text('Θ '+(r['theta']??'-').toString()+'  V '+(r['vega']??'-').toString()),
-      Text('POP '+(r['pop']??'-').toString()),
-    ]);
-  }
+    final strikes = byStrike.keys.toList()..sort();
 
+    String read(dynamic row, String key) {
+      if (row is! Map) return "-";
+      final value = row[key];
+      return value == null || value.toString().trim().isEmpty ? "-" : value.toString();
+    }
+
+    String change(dynamic row) {
+      final direct = read(row, "priceChange");
+      return direct == "-" ? read(row, "netChange") : direct;
+    }
+
+    DataCell numberCell(dynamic row, String key, {Color? color}) => DataCell(
+      Text(read(row, key), style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+    );
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columnSpacing: 14,
+          headingRowHeight: 44,
+          dataRowMinHeight: 50,
+          dataRowMaxHeight: 58,
+          columns: const <DataColumn>[
+            DataColumn(label: Text("CE LTP")),
+            DataColumn(label: Text("CE OI")),
+            DataColumn(label: Text("CE IV")),
+            DataColumn(label: Text("CE Δ")),
+            DataColumn(label: Text("STRIKE")),
+            DataColumn(label: Text("PE LTP")),
+            DataColumn(label: Text("PE OI")),
+            DataColumn(label: Text("PE IV")),
+            DataColumn(label: Text("PE Δ")),
+          ],
+          rows: strikes.map((strike) {
+            final bucket = byStrike[strike]!;
+            final ce = bucket["CE"];
+            final pe = bucket["PE"];
+            final isAtm = spot != null && (strike - spot).abs() <= 20;
+            final ceCh = double.tryParse(change(ce));
+            final peCh = double.tryParse(change(pe));
+            return DataRow(
+              color: isAtm
+                  ? MaterialStatePropertyAll<Color?>(Colors.amber.withValues(alpha: .10))
+                  : null,
+              cells: <DataCell>[
+                numberCell(ce, "ltp", color: Colors.green),
+                numberCell(ce, "oi"),
+                numberCell(ce, "iv"),
+                DataCell(Text(
+                  change(ce),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: ceCh != null && ceCh < 0 ? Colors.red : Colors.green,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )),
+                DataCell(
+                  Text(
+                    isAtm ? "ATM " + strike.toStringAsFixed(0) : strike.toStringAsFixed(0),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isAtm ? Colors.amber.shade700 : null,
+                    ),
+                  ),
+                ),
+                numberCell(pe, "ltp", color: Colors.red),
+                numberCell(pe, "oi"),
+                numberCell(pe, "iv"),
+                DataCell(Text(
+                  change(pe),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: peCh != null && peCh < 0 ? Colors.red : Colors.green,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
   Widget newsPage() => ListView(padding:const EdgeInsets.all(16),children:<Widget>[
     const Text('News',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)),
     const SizedBox(height:8),
