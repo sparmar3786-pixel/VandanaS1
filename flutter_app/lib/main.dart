@@ -70,6 +70,7 @@ class _TerminalState extends State<Terminal> {
   List<dynamic> liveCandles = <dynamic>[];
   List<dynamic> liveOptionRows = <dynamic>[];
   dynamic optionSpot;
+  dynamic optionExpiry;
   List<dynamic> liveOIBuild = <dynamic>[];
   List<dynamic> liveNews = <dynamic>[];
   String liveTransport = 'HTTP polling';
@@ -897,6 +898,12 @@ class _TerminalState extends State<Terminal> {
         setState(() {
           liveOptionRows = rows is List ? List<dynamic>.from(rows) : <dynamic>[];
           optionSpot = d['spot'];
+          optionExpiry = d['expiry'];
+          final cached = d['cached'] == true;
+          final age = d['cache_age_sec'];
+          cacheStatus = cached
+              ? 'Server cache • ' + (age?.toString() ?? '-') + 's old'
+              : 'Live Angel One snapshot';
         });
       }
     } catch (_) {
