@@ -7,6 +7,7 @@ import os
 import re
 import time
 import requests
+from openai import OpenAI
 import json
 import hashlib
 import threading
@@ -78,6 +79,31 @@ def _compact(payload):
     return json.dumps(payload, ensure_ascii=False, separators=(",",":"), default=str)[:30000]
 
 def _openai(p, text):
+    if p["id"] == "gpt56-luna":
+        client = OpenAI(api_key=os.environ[p["env"]])
+        stream = client.responses.create(
+            model=p["model"],
+            service_tier="default",
+            input=[{"role":"system","content":SYSTEM},{"role":"user","content":text}],
+            text={"format":{"type":"text"},"verbosity":"medium"},
+            reasoning={"effort":"medium","summary":"auto"},
+            tools=[],
+            stream=True,
+            store=True,
+            include=["reasoning.encrypted_content","web_search_call.action.sources"],
+            max_output_tokens=700,
+        )
+        chunks=[]
+        for event in stream:
+            event_type=getattr(event,"type","")
+            if event_type in ("response.output_text.delta","response.refusal.delta"):
+                chunks.append(getattr(event,"delta","") or "")
+            elif event_type == "error":
+                raise RuntimeError(getattr(event,"message","OpenAI streaming error"))
+            elif event_type == "response.failed":
+                response=getattr(event,"response",None)
+                raise RuntimeError(getattr(getattr(response,"error",None),"message",str(response)))
+        return "".join(chunks).strip()
     r=requests.post("https://api.openai.com/v1/responses",
         headers={"Authorization":"Bearer "+os.environ[p["env"]],"Content-Type":"application/json"},
         json={"model":p["model"],"input":[{"role":"system","content":SYSTEM},{"role":"user","content":text}],"max_output_tokens":700},
