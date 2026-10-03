@@ -345,9 +345,25 @@ class _TerminalState extends State<Terminal> {
         case 22:
         case 23:
         case 24:
+          await Future.wait<void>([
+            fetchTerminal(),
+            fetchOptionRows(),
+            fetchStrategy377(),
+          ]);
+          break;
         case 25:
+          await Future.wait<void>([
+            fetchTerminal(),
+            fetchOptionRows(),
+            fetchQuant(),
+          ]);
+          break;
         case 26:
-          await Future.wait<void>([fetchTerminal(), fetchOptionRows()]);
+          await Future.wait<void>([
+            fetchTerminal(),
+            fetchOptionRows(),
+            fetchStrategy377(),
+          ]);
           break;
         case 27:
           await fetchStrategy377();
