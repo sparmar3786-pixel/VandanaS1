@@ -25,6 +25,14 @@ class StrategyError(ValueError):
 def _clock(value: Any) -> str:
     if isinstance(value, datetime):
         return value.strftime(TIME_FMT)
+    if isinstance(value, (int, float)):
+        try:
+            # Live API timestamps are Unix seconds; strategy time filters use IST.
+            from datetime import timezone, timedelta
+            ist = timezone(timedelta(hours=5, minutes=30))
+            return datetime.fromtimestamp(float(value), tz=ist).strftime(TIME_FMT)
+        except (OverflowError, OSError, ValueError):
+            return ""
     text = str(value or "")
     if "T" in text:
         text = text.split("T", 1)[1]
