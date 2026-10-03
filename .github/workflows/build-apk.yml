@@ -124,7 +124,7 @@ jobs:
 
       - name: Remove generated sample test
         working-directory: flutter_app
-        run: rm -rf test
+        run: rm -f test/widget_test.dart
 
       - name: Configure Android desugaring
         working-directory: flutter_app
@@ -234,6 +234,10 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             echo "Analyzer returned $rc but reported no error-level diagnostics; continuing."
           fi
+
+      - name: Run Flutter regression tests
+        working-directory: flutter_app
+        run: flutter test --no-pub
 
       - name: Validate Railway backend URL
         env:
