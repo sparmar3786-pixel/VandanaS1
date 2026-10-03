@@ -30,6 +30,9 @@ class LiveDataService {
 
   Future<Map<String, dynamic>> diagnostics() => getJson('/v1/diagnostics');
 
+  Future<Map<String, dynamic>> quantLive({String index = 'NIFTY'}) =>
+      getJson('/v1/quant/live', query: <String, String>{'index': index});
+
   Future<Map<String, dynamic>> aiProviderStatus({bool probe = false}) =>
       getJson('/v1/ai/provider-status', query: <String, String>{'probe': probe.toString()});
 
