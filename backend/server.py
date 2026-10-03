@@ -21,6 +21,7 @@ from strategy_store import save_oi_snapshot
 from strategy_mcp_server import mount_strategy_mcp
 from engine_contract import engine_state, strategy_state
 from angel_data_layer import build_ai_read
+from quant.live import build_quant_evidence
 
 app=FastAPI(title="NSE Algo Signal API"); app.add_middleware(GZipMiddleware,minimum_size=1024); app.include_router(strategy_router); app.include_router(market_core_router); app.include_router(council_router); app.include_router(alert_router); eng=Engine(); client=AngelClient(); nse=NSEClient(); nse_mcp=NSEMCP()
 state={"error":None,"nse_error":None,"last_update":None,"angel_message":"Not connected","nse_mcp_error":None,"nse_mcp_checked":False}
@@ -414,6 +415,12 @@ def live_news(x_token:str=Header(None),q:str="NIFTY India"):
         return {"connected":True,"query":q,"count":len(items),"items":items,"fetched_at":time.time()}
     except Exception as e:
         return {"connected":False,"query":q,"count":0,"items":[],"error":str(e)[:300],"fetched_at":time.time()}
+
+@app.get("/v1/quant/live")
+def quant_live(x_token:str=Header(None),index:str="NIFTY"):
+    auth(x_token)
+    payload=ai_context(index=index,x_token=x_token)
+    return build_quant_evidence(payload)
 
 @app.get("/v1/live/snapshot")
 def live_snapshot(x_token:str=Header(None)):
