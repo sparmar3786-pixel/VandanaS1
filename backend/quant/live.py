@@ -8,7 +8,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 from quant.option_math import (
-    atr, bollinger, bs_greeks, ema, implied_vol, macd, realized_vol,
+    atr, bollinger, bs_greeks, ema, implied_vol, macd, probability_of_profit, realized_vol,
     returns_from_prices, rsi, vwap,
 )
 
@@ -105,7 +105,7 @@ def build_quant_evidence(payload: dict) -> dict:
         greeks=bs_greeks(S,K,T,rate,iv,side) if iv is not None and T>0 else None
         item={"strike":K,"type":side,"ltp":price,"iv":iv,"time_to_expiry_years":T,"greeks":greeks}
         if greeks is not None:
-            item["pop_proxy"]=round(float(__import__("quant.option_math",fromlist=["probability_of_profit"]).probability_of_profit(S,K,T,rate,iv,side)),6)
+            item["pop_proxy"]=round(float(probability_of_profit(S,K,T,rate,iv,side)),6)
         q["option_math"].append(item)
 
     if not q["computed"] and not q["option_math"]:
