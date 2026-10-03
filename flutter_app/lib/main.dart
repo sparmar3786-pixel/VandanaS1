@@ -1246,6 +1246,43 @@ class _TerminalState extends State<Terminal> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
+                  const Text(
+                    "OI BUILDUP FEED",
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  if (liveOIBuild.isEmpty)
+                    const Text("No OI buildup rows returned yet.")
+                  else
+                    ...liveOIBuild.take(8).map((raw) {
+                      final m = raw is Map
+                          ? Map<String, dynamic>.from(raw)
+                          : <String, dynamic>{};
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          (m["tradingSymbol"] ?? m["symbol"] ?? "-").toString(),
+                        ),
+                        subtitle: Text(
+                          "LTP " + (m["ltp"] ?? "-").toString() +
+                          " • OI " + (m["opnInterest"] ?? m["oi"] ?? "-").toString() +
+                          " • OI Δ " + (m["netChangeOpnInterest"] ?? m["oi_change"] ?? "-").toString(),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
                   const Text("TOP OI WALLS", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   ..._topOiRows(),
@@ -1254,6 +1291,13 @@ class _TerminalState extends State<Terminal> {
             ),
           ),
           const SizedBox(height: 8),
+          infoCard(
+            "MCP STORE",
+            mcpCoreData["data_ok"] == true
+                ? "Live • " + (mcpCoreData["age_s"] ?? "-").toString() + "s old"
+                : "No fresh shared MCP snapshot",
+            mcpCoreData["data_ok"] == true ? Colors.green : Colors.orange,
+          ),
           infoCard("CACHE", cacheStatus, Colors.blue),
           FilledButton.icon(
             onPressed: pageBusy ? null : () => refreshCurrentPage(clearServerCache: true),
