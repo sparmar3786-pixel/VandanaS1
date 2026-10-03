@@ -29,9 +29,7 @@ GROK_MODEL = _model_env("XAI_MODEL", "grok-4.7", {"grok-4", "grok-4.1", "grok-4-
 PROVIDERS = [
     {"id":"gpt56-luna","name":"GPT-6 Luna","env":"OPENAI_API_KEY","kind":"openai","model":LUNA_MODEL},
     {"id":"claude-sonnet","name":"Claude Sonnet 4.6","env":"ANTHROPIC_API_KEY","kind":"anthropic","model":os.getenv("ANTHROPIC_MODEL","claude-sonnet-4-6")},
-    SOL_MODEL = _model_env("OPENAI_SOL_MODEL", "gpt-6.1-sol", {"gpt-5.6-sol", "gpt-56-sol"})
-   
-{"id":"gpt56-sol","name":"GPT-6.1 Sol","env":"OPENAI_API_KEY","kind":"openai","model":SOL_MODEL},
+    {"id":"gpt56-sol","name":"GPT-6.1 Sol","env":"OPENAI_API_KEY","kind":"openai","model":SOL_MODEL},
     {"id":"deepseek","name":"DeepSeek Chat","env":"DEEPSEEK_API_KEY","kind":"openai_compat","model":os.getenv("DEEPSEEK_MODEL","deepseek-chat"),"base":"https://api.deepseek.com/v1/chat/completions"},
     {"id":"gemini-flash","name":"Gemini 2.5 Flash","env":"GEMINI_API_KEY","kind":"gemini","model":os.getenv("GEMINI_MODEL","gemini-2.5-flash")},
     {"id":"grok-4","name":"Grok 4.7","env":"XAI_API_KEY","kind":"openai_compat","model":GROK_MODEL,"base":"https://api.x.ai/v1/chat/completions"},
