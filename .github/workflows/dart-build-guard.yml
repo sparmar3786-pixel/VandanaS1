@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/dart-build-guard.yml'
       - 'flutter_app/**'
       - 'flutter_app/pubspec.yaml'
       - 'flutter_app/pubspec.lock'
