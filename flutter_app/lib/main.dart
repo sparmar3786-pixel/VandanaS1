@@ -72,6 +72,9 @@ class _TerminalState extends State<Terminal> {
   List<dynamic> liveOptionRows = <dynamic>[];
   dynamic optionSpot;
   List<dynamic> liveOIBuild = <dynamic>[];
+  List<dynamic> liveNews = <dynamic>[];
+  String liveTransport = 'HTTP polling';
+  String liveLastUpdated = 'Not updated';
   String selectedChartToken = '99926000';
   String selectedChartExchange = 'NSE';
   String selectedInterval = 'FIVE_MINUTE';
@@ -107,6 +110,7 @@ class _TerminalState extends State<Terminal> {
     fetchTerminal();
     fetchIndices();
     fetchCommodities();
+    fetchNews();
     alertService = SignalAlertService(backendUrl, apiToken);
     alertService!.onAlert = (a) {
       if (!mounted) return;
@@ -133,6 +137,7 @@ class _TerminalState extends State<Terminal> {
     liveDataService = LiveDataService(backendUrl, apiToken);
     liveHttpTimer?.cancel();
     liveHttpTimer = Timer.periodic(const Duration(seconds: 10), (_) => fetchLiveSnapshot());
+    Timer.periodic(const Duration(seconds: 60), (_) => fetchNews());
     _connectLiveSocket();
   }
 
@@ -174,6 +179,8 @@ class _TerminalState extends State<Terminal> {
     final server = conn is Map && conn['server'] == true;
     setState(() {
       terminalData = d;
+      liveTransport = (d['live_transport'] ?? 'http').toString().toUpperCase();
+      liveLastUpdated = DateTime.now().toLocal().toString().substring(11, 19);
       final s = d['signals'];
       signal = s is Map<String, dynamic> ? s : signal;
       connection = server && angel ? 'Connected' : server ? 'Backend connected / Angel not connected' : 'Backend not connected';
@@ -182,6 +189,15 @@ class _TerminalState extends State<Terminal> {
     });
   }
 
+
+  Future<void> fetchNews() async {
+    try {
+      final d = await liveDataService?.getJson('/v1/live/news', query: <String, String>{'q': 'NIFTY India'});
+      if (d != null && mounted && d['items'] is List) {
+        setState(() => liveNews = List<dynamic>.from(d['items'] as List));
+      }
+    } catch (_) {}
+  }
 
   Future<void> fetchTerminal() async {
     try {
@@ -569,8 +585,17 @@ class _TerminalState extends State<Terminal> {
   Widget newsPage() => ListView(padding:const EdgeInsets.all(16),children:<Widget>[
     const Text('News',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)),
     const SizedBox(height:8),
-    infoCard('Source','Server-side verified news adapter. Angel SmartAPI is not a news-feed API.',Colors.blue),
-    infoCard('Status','No fabricated headlines.',Colors.orange),
+    infoCard('Source','Live Internet news feed via secure backend adapter.',Colors.blue),
+    if(liveNews.isEmpty) infoCard('Status','Waiting for live news feed.',Colors.orange),
+    ...liveNews.map((x) {
+      final m=x is Map ? Map<String,dynamic>.from(x) : <String,dynamic>{};
+      return Card(child:ListTile(
+        title:Text((m['title'] ?? 'Untitled').toString()),
+        subtitle:Text(((m['source'] ?? '')).toString()+' • '+((m['published'] ?? '')).toString()),
+        trailing:const Icon(Icons.public),
+      ));
+    }),
+    FilledButton.icon(onPressed:fetchNews,icon:const Icon(Icons.refresh),label:const Text('REFRESH LIVE NEWS')),
   ]);
 
   Widget marketDetailsPage() => ListView(padding:const EdgeInsets.all(16),children:<Widget>[
