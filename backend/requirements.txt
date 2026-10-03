@@ -11,3 +11,4 @@ joblib
 mcp==1.28.0
 pandas
 anthropic
+openai>=1.109.0
