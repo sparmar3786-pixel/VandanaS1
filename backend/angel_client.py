@@ -15,6 +15,8 @@ class AngelClient:
         self.last_chain_cache={}; self.last_chain_cache_ts={}
         self.ws=None; self.ws_thread=None; self.ws_quotes={}; self.ws_lock=threading.Lock(); self.login_lock=threading.Lock(); self.session_started=0.0; self.session_ttl=6*60*60
         self.active_api_key=None; self.active_client_code=None; self.active_pin=None; self.active_totp=None; self.last_snapshot=None
+        self.last_index_quote=None; self.last_index_quote_ts=0.0
+        self.last_commodity_quote=None; self.last_commodity_quote_ts=0.0
     def login(self, api_key=None, client_code=None, pin=None, totp=None, force=False):
         # Reuse one successful Angel session for 6 hours; avoid repeated TOTP/session calls.
         now=time.time()
@@ -206,6 +208,10 @@ class AngelClient:
         self.last_chain_cache.clear()
         self.last_chain_cache_ts.clear()
         self.last_snapshot = None
+        self.last_index_quote = None
+        self.last_index_quote_ts = 0.0
+        self.last_commodity_quote = None
+        self.last_commodity_quote_ts = 0.0
         self.chain = {}
         self.strikes = []
         self.expiry = None
@@ -239,27 +245,50 @@ class AngelClient:
         return sorted(bytoken.values(),key=lambda x:(x["exchange"],x["name"] or ""))
 
     def index_catalog_quotes(self):
-        api=self.require_api(); instruments=self.index_catalog(); grouped={"NSE":[],"BSE":[]}
-        for r in instruments: grouped[r["exchange"]].append(r["token"])
+        api=self.require_api()
+        now=time.time()
+        if self.last_index_quote is not None and now-self.last_index_quote_ts < 8:
+            return {**self.last_index_quote,"cached":True,"cache_age_sec":round(now-self.last_index_quote_ts,1)}
+        instruments=self.index_catalog()
+        grouped={"NSE":[],"BSE":[]}
+        for r in instruments:
+            grouped[r["exchange"]].append(r["token"])
         fetched=[]
         for exchange,tokens in grouped.items():
             for i in range(0,len(tokens),40):
                 batch=tokens[i:i+40]
                 if batch:
-                    result=api.getMarketData("FULL",{exchange:batch})
+                    result=self._market_data_full_retry(exchange,batch)
                     fetched.extend(result.get("data",{}).get("fetched",[]) or [])
         q={str(r.get("symbolToken")):r for r in fetched}
-        return {"data":[{**inst,"ltp":q.get(inst["token"],{}).get("ltp"),"open":q.get(inst["token"],{}).get("open"),"high":q.get(inst["token"],{}).get("high"),"low":q.get(inst["token"],{}).get("low"),"close":q.get(inst["token"],{}).get("close"),"netChange":q.get(inst["token"],{}).get("netChange"),"percentChange":q.get(inst["token"],{}).get("percentChange"),"volume":q.get(inst["token"],{}).get("tradeVolume")} for inst in instruments]}
+        data=[{**inst,
+               "ltp":q.get(inst["token"],{}).get("ltp"),
+               "open":q.get(inst["token"],{}).get("open"),
+               "high":q.get(inst["token"],{}).get("high"),
+               "low":q.get(inst["token"],{}).get("low"),
+               "close":q.get(inst["token"],{}).get("close"),
+               "netChange":q.get(inst["token"],{}).get("netChange"),
+               "percentChange":q.get(inst["token"],{}).get("percentChange"),
+               "volume":q.get(inst["token"],{}).get("tradeVolume")} for inst in instruments]
+        result={"data":data,"source":"Angel One SmartAPI"}
+        self.last_index_quote=result
+        self.last_index_quote_ts=time.time()
+        return {**result,"cached":False}
 
     def index_quote(self, symbols=None):
         api=self.require_api()
         symbols=symbols or {
-            "NIFTY":"99926000","BANKNIFTY":"99926009","FINNIFTY":"99926037",
-            "SENSEX":"99919000"
+            "NIFTY":"99926000","BANKNIFTY":"99926009","FINNIFTY":"99926037","SENSEX":"99919000"
         }
-        tokens=list(symbols.values())
-        result=api.getMarketData("FULL", {"NSE": [t for t in tokens if t!="99919000"], "BSE":["99919000"]})
-        return result
+        grouped={"NSE":[],"BSE":[]}
+        for token in symbols.values():
+            grouped["BSE" if str(token)=="99919000" else "NSE"].append(str(token))
+        fetched=[]
+        for exchange,tokens in grouped.items():
+            if tokens:
+                result=self._market_data_full_retry(exchange,tokens)
+                fetched.extend(result.get("data",{}).get("fetched",[]) or [])
+        return {"data":{"fetched":fetched,"unfetched":[]},"source":"Angel One SmartAPI"}
 
     def candles(self, exchange, token, interval="FIVE_MINUTE", days=1):
         api=self.require_api()
@@ -308,6 +337,9 @@ class AngelClient:
 
     def commodity_quotes(self):
         api=self.require_api()
+        now=time.time()
+        if self.last_commodity_quote is not None and now-self.last_commodity_quote_ts < 8:
+            return {**self.last_commodity_quote,"cached":True,"cache_age_sec":round(now-self.last_commodity_quote_ts,1)}
         master=self._master()
         wanted=("CRUDEOIL","CRUDEOILM","NATURALGAS","NATGASMINI","GOLD","GOLDM","SILVER","SILVERM","COPPER","ALUMINIUM","ZINC","LEAD","NICKEL","MENTHAOIL","COTTON")
         today=dt.date.today()
@@ -315,30 +347,39 @@ class AngelClient:
         for name in wanted:
             candidates=[]
             for r in master:
-                if r.get("exch_seg")!="MCX" or not r.get("name","").upper().startswith(name): continue
+                if r.get("exch_seg")!="MCX" or not str(r.get("name","")).upper().startswith(name):
+                    continue
                 exp=r.get("expiry","")
                 if exp:
                     try:
                         ed=dt.datetime.strptime(exp,"%d%b%Y").date()
                         if ed>=today: candidates.append((ed,r))
-                    except Exception:
-                        pass
+                    except Exception: pass
             if candidates:
-                candidates.sort(key=lambda x:x[0])
-                selected.append(candidates[0][1])
+                candidates.sort(key=lambda x:x[0]); selected.append(candidates[0][1])
         tokens=[str(r["token"]) for r in selected]
-        if not tokens: return {"data":{"fetched":[],"unfetched":[]},"instruments":[]}
-        result=api.getMarketData("FULL",{"MCX":tokens})
-        by={str(r["symbolToken"]):r for r in result.get("data",{}).get("fetched",[])}
-        rows=[]
+        fetched=[]
+        for i in range(0,len(tokens),40):
+            batch=tokens[i:i+40]
+            if batch:
+                result=self._market_data_full_retry("MCX",batch)
+                fetched.extend(result.get("data",{}).get("fetched",[]) or [])
+        by={str(r["symbolToken"]):r for r in fetched}
+        rows=[]; unfetched=[]
         for r in selected:
             q=by.get(str(r["token"]))
             if q:
                 rows.append({"name":r.get("name"),"tradingSymbol":r.get("symbol"),"token":str(r["token"]),
                              "expiry":r.get("expiry"),"ltp":q.get("ltp"),"open":q.get("open"),
                              "high":q.get("high"),"low":q.get("low"),"close":q.get("close"),
-                             "volume":q.get("tradeVolume"),"oi":q.get("opnInterest")})
-        return {"data":{"fetched":rows,"unfetched":[]},"instruments":selected}
+                             "volume":q.get("tradeVolume"),"oi":q.get("opnInterest"),
+                             "netChange":q.get("netChange"),"percentChange":q.get("percentChange")})
+            else:
+                unfetched.append(str(r["token"]))
+        result={"data":{"fetched":rows,"unfetched":unfetched},"instruments":selected,"source":"Angel One SmartAPI"}
+        self.last_commodity_quote=result
+        self.last_commodity_quote_ts=time.time()
+        return {**result,"cached":False}
 
     def _market_data_full_retry(self, exchange, tokens):
         last=None
