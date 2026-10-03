@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_saver/file_saver.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -393,7 +392,7 @@ class _TerminalState extends State<Terminal> {
     final color = !marketOpen ? Colors.blue : up ? Colors.green : down ? Colors.red : Colors.blue;
     final status = value(e["status"]);
     return ListView(padding: const EdgeInsets.all(12), children: <Widget>[
-      Card(color: color.withOpacity(.18), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: color, width: 1.5)), child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      Card(color: color.withValues(alpha: .18), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: color, width: 1.5)), child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Row(children: <Widget>[const Icon(Icons.bolt, size: 30), const SizedBox(width: 10), const Expanded(child: Text("NSE Algo Signal", style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold))), Chip(backgroundColor: color, label: Text(marketOpen ? trend : "MARKET CLOSED", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))]),
         const SizedBox(height: 8),
         Text("Engine status: $status", style: TextStyle(color: color, fontWeight: FontWeight.bold)),
@@ -654,7 +653,7 @@ class _TerminalState extends State<Terminal> {
       final ce=byStrike[strike]!['CE']; final pe=byStrike[strike]!['PE'];
       final atm=optionSpot!=null && (double.tryParse(strike)??-1)==(double.tryParse(optionSpot.toString())??-2);
       return Card(child:Padding(padding:const EdgeInsets.all(8),child:Column(children:<Widget>[
-        Container(width:double.infinity,padding:const EdgeInsets.symmetric(vertical:5),color:Theme.of(context).brightness==Brightness.dark?Colors.white.withOpacity(.08):Colors.black.withOpacity(.04),child:Center(child:Text(atm?'SPOT  '+strike+'  SPOT':strike,style:const TextStyle(fontWeight:FontWeight.bold)))),
+        Container(width:double.infinity,padding:const EdgeInsets.symmetric(vertical:5),color:Theme.of(context).brightness==Brightness.dark?Colors.white.withValues(alpha: .08):Colors.black.withValues(alpha: .04),child:Center(child:Text(atm?'SPOT  '+strike+'  SPOT':strike,style:const TextStyle(fontWeight:FontWeight.bold)))),
         const SizedBox(height:6), Row(crossAxisAlignment:CrossAxisAlignment.start,children:<Widget>[
           Expanded(child:_optionCell(ce,'CE')), const SizedBox(width:8), Expanded(child:_optionCell(pe,'PE')),
         ]),
