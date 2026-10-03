@@ -381,52 +381,265 @@ class _TerminalState extends State<Terminal> {
   );
 
   Widget dashboard() {
-    final marketOpen = terminalData?["market_open"] == true;
-    final e = (terminalData?["engine_state"] is Map) ? Map<String,dynamic>.from(terminalData!["engine_state"] as Map) : <String,dynamic>{};
     const unavailable = "DATA UNAVAILABLE";
-    String value(dynamic v) => v == null || v.toString().trim().isEmpty ? unavailable : v.toString();
+    final marketOpen = terminalData?["market_open"] == true;
+    final e = terminalData?["engine_state"] is Map
+        ? Map<String, dynamic>.from(terminalData!["engine_state"] as Map)
+        : <String, dynamic>{};
+
+    String value(dynamic v) {
+      if (v == null) return unavailable;
+      final text = v.toString().trim();
+      return text.isEmpty ? unavailable : text;
+    }
+
+    dynamic liveIndex(String query) {
+      final needle = query.toUpperCase().replaceAll(" ", "");
+      for (final item in liveIndices) {
+        if (item is! Map) continue;
+        final m = Map<String, dynamic>.from(item);
+        final name = value(m["name"] ?? m["symbol"] ?? m["tradingSymbol"])
+            .toUpperCase()
+            .replaceAll(" ", "");
+        if (name.contains(needle) || needle.contains(name)) return m;
+      }
+      return liveIndices.isNotEmpty && liveIndices.first is Map
+          ? Map<String, dynamic>.from(liveIndices.first as Map)
+          : null;
+    }
+
+    final primaryIndex = liveIndex("NIFTY");
+    final primaryLtp = primaryIndex is Map
+        ? value(primaryIndex["ltp"])
+        : value(e["index_ltp"]);
+    final primaryChange = primaryIndex is Map
+        ? value(primaryIndex["percentChange"] ?? primaryIndex["netChange"])
+        : unavailable;
+
     final trend = value(e["trend"]);
     final action = value(e["signal_status"]);
     final up = trend.toUpperCase().contains("UP");
     final down = trend.toUpperCase().contains("DOWN");
-    final color = !marketOpen ? Colors.blue : up ? Colors.green : down ? Colors.red : Colors.blue;
+    final color = !marketOpen
+        ? Colors.blue
+        : up
+            ? Colors.green
+            : down
+                ? Colors.red
+                : Colors.blue;
     final status = value(e["status"]);
-    return ListView(padding: const EdgeInsets.all(12), children: <Widget>[
-      Card(color: color.withValues(alpha: .18), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: color, width: 1.5)), child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        Row(children: <Widget>[const Icon(Icons.bolt, size: 30), const SizedBox(width: 10), const Expanded(child: Text("NSE Algo Signal", style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold))), Chip(backgroundColor: color, label: Text(marketOpen ? trend : "MARKET CLOSED", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))]),
-        const SizedBox(height: 8),
-        Text("Engine status: $status", style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-        Text("Live snapshot • no fabricated values"),
-      ]))),
-      const SizedBox(height: 10),
-      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        const Text("CURRENT ENGINE STATE", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const Divider(height: 20),
-        row("Symbol", value(e["symbol"])),
-        row("Index / Underlying LTP", value(e["index_ltp"])),
-        row("CE / PE", value(e["ce_pe"])),
-        row("Strike Price", value(e["strike"])),
-        row("Option LTP", value(e["option_ltp"])),
-        row("OI", value(e["oi"])),
-        row("OI Change", value(e["oi_change"])),
-        row("Volume", value(e["volume"])),
-        row("ATM", value(e["atm"])),
-        row("Trend", trend),
-        row("Signal Status", action),
-      ]))),
-      const SizedBox(height: 10),
-      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        const Text("SIGNAL DETAILS", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-        row("Option Symbol", value(e["option_symbol"])),
-        row("Entry", value(e["entry"])),
-        row("Stop Loss", value(e["stop_loss"])),
-        row("Target", value(e["target"])),
-      ]))),
-      const SizedBox(height: 10),
-      infoCard("Connection", connection, connection == "Connected" ? Colors.green : Colors.orange),
-      infoCard("Mode", "Paper signals only • No order placement.", Colors.blue),
-      FilledButton.icon(onPressed: fetchTerminal, icon: const Icon(Icons.refresh), label: const Text("REFRESH LIVE ENGINE")),
-    ]);
+    final source = value(e["source"]);
+    final angelConnected = terminalData?["connection"] is Map &&
+        (terminalData?["connection"] as Map)["angel"] == true;
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await Future.wait<void>(<Future<void>>[
+          fetchTerminal(),
+          fetchIndices(),
+        ]);
+      },
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        children: <Widget>[
+          Card(
+            color: color.withValues(alpha: .18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: color, width: 1.5),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      const Icon(Icons.bolt, size: 30),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          "NSE Algo Signal",
+                          style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Chip(
+                        backgroundColor: color,
+                        label: Text(
+                          marketOpen ? trend : "MARKET CLOSED",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Engine status: $status",
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    "Source: " + source +
+                        " • " + (angelConnected ? "Angel One connected" : "Angel One not connected"),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: infoCard("NIFTY LIVE", primaryLtp, Colors.blue),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: infoCard(
+                  "CHANGE",
+                  primaryChange,
+                  primaryChange.contains("-") ? Colors.red : Colors.green,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      const Expanded(
+                        child: Text(
+                          "LIVE INDIAN INDICES",
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: "Refresh indices",
+                        onPressed: fetchIndices,
+                        icon: const Icon(Icons.refresh),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 16),
+                  if (liveIndices.isEmpty)
+                    const ListTile(
+                      dense: true,
+                      leading: Icon(Icons.sync),
+                      title: Text("Waiting for Angel One index feed"),
+                      subtitle: Text("No fabricated market values are shown."),
+                    )
+                  else
+                    ...liveIndices.take(8).map((item) {
+                      if (item is! Map) return const SizedBox.shrink();
+                      final q = Map<String, dynamic>.from(item);
+                      final pct = value(q["percentChange"] ?? q["netChange"]);
+                      final pctNumber = double.tryParse(pct.replaceAll("%", "").trim());
+                      final qColor = pctNumber == null
+                          ? Colors.blue
+                          : pctNumber > 0
+                              ? Colors.green
+                              : pctNumber < 0
+                                  ? Colors.red
+                                  : Colors.blue;
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          value(q["name"] ?? q["symbol"] ?? q["tradingSymbol"]),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(value(q["exchange"]) + " • " + pct),
+                        trailing: Text(
+                          value(q["ltp"]),
+                          style: TextStyle(
+                            color: qColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    "CURRENT ENGINE STATE",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Divider(height: 20),
+                  row("Symbol", value(e["symbol"])),
+                  row("Index / Underlying LTP", primaryLtp),
+                  row("CE / PE", value(e["ce_pe"])),
+                  row("Strike Price", value(e["strike"])),
+                  row("Option LTP", value(e["option_ltp"])),
+                  row("OI", value(e["oi"])),
+                  row("OI Change", value(e["oi_change"])),
+                  row("Volume", value(e["volume"])),
+                  row("ATM", value(e["atm"])),
+                  row("Trend", trend),
+                  row("Signal Status", action),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    "SIGNAL DETAILS",
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                  row("Option Symbol", value(e["option_symbol"])),
+                  row("Entry", value(e["entry"])),
+                  row("Stop Loss", value(e["stop_loss"])),
+                  row("Target", value(e["target"])),
+                  row("Score", value(e["score"])),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          infoCard(
+            "Connection",
+            connection,
+            connection == "Connected" ? Colors.green : Colors.orange,
+          ),
+          infoCard("Live transport", liveTransport + " • updated " + liveLastUpdated, Colors.blue),
+          infoCard("NSE MCP", nseMcpStatus, nseMcpStatus == "Connected" ? Colors.green : Colors.orange),
+          infoCard("Mode", "Paper signals only • No order placement.", Colors.blue),
+          FilledButton.icon(
+            onPressed: fetchTerminal,
+            icon: const Icon(Icons.refresh),
+            label: const Text("REFRESH LIVE DASHBOARD"),
+          ),
+        ],
+      ),
+    );
   }
   Future<void> fetchIndices() async {
     try {
