@@ -44,6 +44,7 @@ class LiveDataService {
 
   Map<String, String> get _headers => <String, String>{
         'Accept': 'application/json',
+        'User-Agent': 'Parmar-Trading-Flutter/1.0',
         if (token.isNotEmpty) 'x-token': token,
       };
 
