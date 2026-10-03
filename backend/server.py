@@ -12,7 +12,7 @@ from nse_client import NSEClient
 import nse_features
 from nse_mcp import NSEMCP,result_to_csv
 from ai_model import p_up,label
-from ai_orchestrator import provider_status, validate_all, NSE_SITE_URL, _nse_site_evidence
+from ai_orchestrator import provider_status, provider_live_status, validate_all, NSE_SITE_URL, _nse_site_evidence
 from market_core import router as market_core_router, ingest_chain, put_spot, evidence as market_evidence, mount_mcp, install_mcp_auth
 from strategy_api import router as strategy_router
 from council import router as council_router
@@ -371,6 +371,17 @@ def ai_context(index:str="NIFTY",x_token:str=Header(None)):
         "trend":strategy.get("trend"),"support":strategy.get("support"),"resistance":strategy.get("resistance"),
         "max_pain":strategy.get("max_pain")
     },"ai_rule":"Reconcile Angel API + official NSE MCP + Internet evidence. Missing or conflicting evidence forces WAIT."}
+@app.get("/v1/ai/provider-status")
+def ai_provider_status(x_token:str=Header(None),probe:bool=False):
+    """Safe AI provider status. probe=true performs real minimal API calls; secrets are never returned."""
+    auth(x_token)
+    if probe:
+        return provider_live_status()
+    rows=provider_status()
+    return {"providers":rows,"configured":sum(1 for x in rows if x["configured"]),"live":None,
+            "total":len(rows),"six_ai_live":None,
+            "message":"Use ?probe=true for a real server-side connectivity check."}
+
 @app.post("/v1/ai/validate")
 def ai_validate(body:AIValidationRequest,x_token:str=Header(None)):
     auth(x_token)
