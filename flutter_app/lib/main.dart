@@ -7,7 +7,6 @@ import 'package:file_saver/file_saver.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'signal_alerts.dart';
-import 'puter_ai_page.dart';
 import 'server_ai_page.dart';
 import 'live_data_service.dart';
 
