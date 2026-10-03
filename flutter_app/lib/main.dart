@@ -112,6 +112,8 @@ class _TerminalState extends State<Terminal> {
     fetchIndices();
     fetchCommodities();
     fetchNews();
+    fetchOptionRows();
+    fetchOIBuild();
     alertService = SignalAlertService(backendUrl, apiToken);
     alertService!.onAlert = (a) {
       if (!mounted) return;
@@ -938,27 +940,60 @@ class _TerminalState extends State<Terminal> {
       ),
     );
 
-    Widget miniBars() => SizedBox(
-      height: 92,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: List<Widget>.generate(12, (i) {
-          final h = 20.0 + ((i * 17) % 58);
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Container(
-                height: h,
-                decoration: BoxDecoration(
-                  color: i.isEven ? Colors.green.withValues(alpha: .72) : Colors.red.withValues(alpha: .62),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+    final liveRows = liveOptionRows.whereType<Map>().toList();
+    Map<String,dynamic>? liveAtm() {
+      final spot = double.tryParse((optionSpot ?? '').toString());
+      if (liveRows.isEmpty || spot == null) return liveRows.isNotEmpty ? Map<String,dynamic>.from(liveRows.first) : null;
+      Map<String,dynamic>? best;
+      var bestDiff = double.infinity;
+      for (final r in liveRows) {
+        final strike = double.tryParse((r['strike'] ?? '').toString());
+        if (strike == null) continue;
+        final diff = (strike - spot).abs();
+        if (diff < bestDiff) { bestDiff = diff; best = Map<String,dynamic>.from(r); }
+      }
+      return best;
+    }
+    String liveValue(dynamic value) => value == null || value.toString().trim().isEmpty ? 'DATA UNAVAILABLE' : value.toString();
+    final atmRow = liveAtm();
+    final engine = terminalData?['engine_state'] is Map
+        ? Map<String,dynamic>.from(terminalData!['engine_state'] as Map)
+        : <String,dynamic>{};
+
+    Widget miniBars() {
+      if (liveRows.isEmpty) {
+        return const SizedBox(height: 72, child: Center(child: Text('LIVE OPTION/OI DATA WAITING')));
+      }
+      final values = liveRows.take(16).map((r) {
+        final oi = double.tryParse((r['oi'] ?? r['openInterest'] ?? '0').toString()) ?? 0;
+        return oi;
+      }).toList();
+      final maxValue = values.fold<double>(0, (a, v) => v > a ? v : a);
+      if (maxValue <= 0) return const SizedBox(height: 72, child: Center(child: Text('LIVE OI VALUES UNAVAILABLE')));
+      return SizedBox(
+        height: 92,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: List<Widget>.generate(values.length, (i) {
+            final h = 18.0 + (values[i] / maxValue) * 68.0;
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Container(
+                  height: h,
+                  decoration: BoxDecoration(
+                    color: (liveRows[i]['type'] ?? 'CE').toString().toUpperCase() == 'PE'
+                        ? Colors.red.withValues(alpha: .68)
+                        : Colors.green.withValues(alpha: .68),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                  ),
                 ),
               ),
-            ),
-          );
-        }),
-      ),
-    );
+            );
+          }),
+        ),
+      );
+    }
 
     Widget signalRow(String side, String strike, String entry, String sl, String target) => ListTile(
       dense: true,
@@ -1027,62 +1062,82 @@ class _TerminalState extends State<Terminal> {
         ]),
       ])));
     } else if (index == 22) {
+      final ce = liveRows.where((r) => (r['type'] ?? '').toString().toUpperCase() == 'CE').toList();
+      final pe = liveRows.where((r) => (r['type'] ?? '').toString().toUpperCase() == 'PE').toList();
+      final ceAtm = ce.isNotEmpty ? ce.first : <String,dynamic>{};
+      final peAtm = pe.isNotEmpty ? pe.first : <String,dynamic>{};
+      final volume = liveRows.fold<num>(0, (sum, r) => sum + (num.tryParse((r['volume'] ?? '0').toString()) ?? 0));
       content.add(section('PREMIUM / VOLUME', Column(children: <Widget>[
         miniBars(),
         Row(children: <Widget>[
-          metric('CE Premium', '--'),
-          metric('PE Premium', '--'),
-          metric('Volume', '--'),
+          metric('CE Premium', liveValue(ceAtm['ltp'])),
+          metric('PE Premium', liveValue(peAtm['ltp'])),
+          metric('Volume', liveRows.isEmpty ? 'DATA UNAVAILABLE' : volume.toString()),
         ]),
       ])));
     } else if (index == 23) {
       content.add(section('IV SURFACE', Column(children: <Widget>[
         Row(children: <Widget>[
-          metric('ATM IV', '--'),
-          metric('Delta', '--'),
-          metric('Gamma', '--'),
+          metric('ATM IV', liveValue(atmRow?['iv'] ?? atmRow?['impliedVolatility'])),
+          metric('Delta', liveValue(atmRow?['delta'])),
+          metric('Gamma', liveValue(atmRow?['gamma'])),
         ]),
         Row(children: <Widget>[
-          metric('Vega', '--'),
-          metric('Theta', '--'),
-          metric('PCR', '--'),
+          metric('Vega', liveValue(atmRow?['vega'])),
+          metric('Theta', liveValue(atmRow?['theta'])),
+          metric('PCR', liveValue(strategyData['pcr'] ?? terminalData?['pcr'])),
         ]),
         const SizedBox(height: 8),
-        const Text('Greeks are displayed only when the live backend supplies them.'),
+        const Text('Values shown only from live backend data; unavailable fields remain DATA UNAVAILABLE.'),
       ])));
     } else if (index == 24) {
+      final sig = signal ?? <String,dynamic>{};
+      final side = (sig['action'] ?? 'WAIT').toString().toUpperCase().contains('PUT') ? 'PE' : 'CE';
       content.add(section('SIGNAL FLOW', Column(children: <Widget>[
-        signalRow('CE', 'ATM', '--', '--', '--'),
-        signalRow('PE', 'ATM', '--', '--', '--'),
-        infoCard('Execution', 'Signal/read-only terminal. Order placement is intentionally absent.', Colors.blue),
+        signalRow(
+          side,
+          liveValue(sig['strike']),
+          liveValue(sig['entry']),
+          liveValue(sig['sl'] ?? sig['stopLoss']),
+          liveValue(sig['target']),
+        ),
+        infoCard('Execution', 'Live signal flow is read-only; order placement remains disabled.', Colors.blue),
       ])));
     } else if (index == 25) {
       content.add(section('MARKET REGIME', Column(children: <Widget>[
         Row(children: <Widget>[
-          metric('Trend', 'LIVE'),
-          metric('Volatility', 'LIVE'),
+          metric('Trend', liveValue(engine['trend'])),
+          metric('Volatility', liveValue(engine['volatility'] ?? engine['volatility_state'])),
         ]),
         Row(children: <Widget>[
-          metric('Momentum', 'LIVE'),
-          metric('Mode', 'LIVE'),
+          metric('Momentum', liveValue(engine['momentum'])),
+          metric('Mode', liveValue(engine['mode'] ?? engine['status'])),
         ]),
         miniBars(),
       ])));
     } else if (index == 26) {
+      final sig = signal ?? <String,dynamic>{};
+      final action = liveValue(sig['action'] ?? engine['signal_status']);
       content.add(section('QUALIFYING TRADE PLANS', Column(children: <Widget>[
-        signalRow('CE', '24700', '102.30', '94.50', '112.40'),
-        signalRow('PE', '24600', '96.40', '88.00', '109.20'),
-        const Text('Reference values are UI placeholders; live values come from the backend.'),
+        signalRow(
+          action.toUpperCase().contains('PUT') ? 'PE' : 'CE',
+          liveValue(sig['strike']),
+          liveValue(sig['entry']),
+          liveValue(sig['sl'] ?? sig['stopLoss']),
+          liveValue(sig['target']),
+        ),
+        infoCard('Signal state', action, action == 'WAIT' ? Colors.orange : Colors.blue),
+        const Text('No hard-coded market prices are used.', style: TextStyle(color: Colors.grey)),
       ])));
     } else if (index == 27) {
       content.add(section('STRATEGY PERFORMANCE', Column(children: <Widget>[
         Row(children: <Widget>[
-          metric('Win Rate', '--'),
-          metric('Avg R', '--'),
-          metric('Trades', '--'),
+          metric('Win Rate', liveValue(strategyData['win_rate'] ?? strategyData['winRate'])),
+          metric('Avg R', liveValue(strategyData['avg_r'] ?? strategyData['avgR'])),
+          metric('Trades', liveValue(strategyData['trades'] ?? strategyData['trade_count'])),
         ]),
         const SizedBox(height: 8),
-        miniBars(),
+        const Text('Performance is shown only when a live backtest payload is available.', style: TextStyle(color: Colors.grey)),
         FilledButton(onPressed: () => setState(() => selected = 14), child: const Text('OPEN STRATEGIES')),
       ])));
     } else if (index == 28) {
