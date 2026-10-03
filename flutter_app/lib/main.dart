@@ -90,6 +90,7 @@ class _TerminalState extends State<Terminal> {
   late final WebViewController proChartController;
   bool proChartReady = false;
   LiveDataService? liveDataService;
+  Timer? liveNewsTimer;
   WebSocketChannel? liveChannel;
   StreamSubscription<dynamic>? liveSubscription;
   Timer? liveHttpTimer;
@@ -127,6 +128,7 @@ class _TerminalState extends State<Terminal> {
     timer?.cancel();
     marketTimer?.cancel();
     liveHttpTimer?.cancel();
+    liveNewsTimer?.cancel();
     liveSubscription?.cancel();
     liveChannel?.sink.close();
     alertService?.stop();
@@ -137,7 +139,8 @@ class _TerminalState extends State<Terminal> {
     liveDataService = LiveDataService(backendUrl, apiToken);
     liveHttpTimer?.cancel();
     liveHttpTimer = Timer.periodic(const Duration(seconds: 10), (_) => fetchLiveSnapshot());
-    Timer.periodic(const Duration(seconds: 60), (_) => fetchNews());
+    liveNewsTimer?.cancel();
+    liveNewsTimer = Timer.periodic(const Duration(seconds: 60), (_) => fetchNews());
     _connectLiveSocket();
   }
 
@@ -308,25 +311,45 @@ class _TerminalState extends State<Terminal> {
   );
 
   Widget buildScreen() {
-    if (selected == 0) return dashboard();
-    if (selected == 1) return marketPage();
-    if (selected == 2) return commodityPage();
-    if (selected == 3) return signals();
-    if (selected == 4) return oiLabPage();
-    if (selected == 5) return watchlistPage();
-    if (selected == 6) return chartsPage();
-    if (selected == 7) return optionChain();
-    if (selected == 8) return newsPage();
-    if (selected == 9) return marketDetailsPage();
-    if (selected == 10) return angelApi();
-    if (selected == 12) return nseMcp();
-    if (selected == 14) return strategiesPage();
-    if (selected == 15) return aiModelsPage();
-    if (selected == 16) return settingsPage();
-    if (selected == 17) return morePage();
-    if (selected >= 18) return referenceLayoutScreen(selected);
-    return dataPage(screens[selected]);
+    Widget screen;
+    if (selected == 0) screen = dashboard();
+    else if (selected == 1) screen = marketPage();
+    else if (selected == 2) screen = commodityPage();
+    else if (selected == 3) screen = signals();
+    else if (selected == 4) screen = oiLabPage();
+    else if (selected == 5) screen = watchlistPage();
+    else if (selected == 6) screen = chartsPage();
+    else if (selected == 7) screen = optionChain();
+    else if (selected == 8) screen = newsPage();
+    else if (selected == 9) screen = marketDetailsPage();
+    else if (selected == 10) screen = angelApi();
+    else if (selected == 12) screen = nseMcp();
+    else if (selected == 14) screen = strategiesPage();
+    else if (selected == 15) screen = aiModelsPage();
+    else if (selected == 16) screen = settingsPage();
+    else if (selected == 17) screen = morePage();
+    else if (selected >= 18) screen = referenceLayoutScreen(selected);
+    else screen = dataPage(screens[selected]);
+    return Column(children: <Widget>[
+      liveStatusStrip(),
+      Expanded(child: screen),
+    ]);
   }
+
+  Widget liveStatusStrip() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    child: Row(children: <Widget>[
+      Icon(Icons.circle, size: 9, color: connection == 'Connected' ? Colors.green : Colors.orange),
+      const SizedBox(width: 6),
+      Expanded(child: Text('LIVE API • $connection • $liveTransport • updated $liveLastUpdated', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))),
+      IconButton(
+        visualDensity: VisualDensity.compact,
+        onPressed: fetchLiveSnapshot,
+        icon: const Icon(Icons.sync, size: 17),
+      ),
+    ]),
+  );
 
   Widget dashboard() {
     final marketOpen = terminalData?["market_open"] == true;
@@ -1076,7 +1099,7 @@ class _TerminalState extends State<Terminal> {
       ])));
     } else {
       content.add(section('6-LAYER AI VALIDATION', Column(children: <Widget>[
-        for (final layer in const ['GPT-5.6 Luna','Claude Sonnet','GPT-5.6 Sol','DeepSeek Chat','Gemini 2.5 Flash','Grok 4'])
+        for (final layer in const ['GPT-6 Luna','Claude Sonnet','GPT-5.6 Sol','DeepSeek Chat','Gemini 2.5 Flash','Grok 4'])
           ListTile(
             dense: true,
             leading: const CircleAvatar(child: Icon(Icons.psychology, size: 16)),
