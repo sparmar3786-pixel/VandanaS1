@@ -13,7 +13,7 @@ import nse_features
 from nse_mcp import NSEMCP,result_to_csv
 from ai_model import p_up,label
 from ai_orchestrator import provider_status, provider_live_status, validate_all, NSE_SITE_URL, _nse_site_evidence
-from market_core import router as market_core_router, ingest_chain, put_spot, evidence as market_evidence, mount_mcp, install_mcp_auth
+from market_core import router as market_core_router, ingest_chain, put_spot, evidence as market_evidence, mount_mcp, install_mcp_auth, put_commodities, commodity_snapshot, snapshot as market_core_snapshot
 from strategy_api import router as strategy_router
 from council import router as council_router
 from notifier import router as alert_router, alert_loop
@@ -27,6 +27,8 @@ from strategy_377 import evaluate_live as evaluate_strategy_377
 app=FastAPI(title="NSE Algo Signal API"); app.add_middleware(GZipMiddleware,minimum_size=1024); app.include_router(strategy_router); app.include_router(market_core_router); app.include_router(council_router); app.include_router(alert_router); eng=Engine(); client=AngelClient(); nse=NSEClient(); nse_mcp=NSEMCP()
 state={"error":None,"nse_error":None,"last_update":None,"angel_message":"Not connected","nse_mcp_error":None,"nse_mcp_checked":False}
 quant_live_cache={"key":None,"ts":0.0,"value":None}
+mcp_context_cache={"key":None,"ts":0.0,"value":None}
+mcp_option_cache={"key":None,"ts":0.0,"value":None}
 prev_chain={"c":None}; workers_started=False; last_oi_save=0.0
 
 # Two read-only MCP servers live in this same Railway/Fly process.
@@ -79,7 +81,38 @@ def loop():
             _ensure_angel()
             if market_open():
                 snap=client.snapshot()
-                eng.update(snap); state["last_update"]=time.time(); state["error"]=None
+                eng.update(snap)
+                # Keep the shared local MCP store synchronized with the same
+                # live Angel snapshot used by the engine.
+                rows=[]
+                for (key, item) in (snap.get("opts") or {}).items():
+                    try:
+                        strike, side = key
+                        rows.append({
+                            "strike": strike, "type": side,
+                            "symbol": item.get("symbol"), "token": item.get("token"),
+                            "ltp": item.get("ltp"), "oi": item.get("oi"),
+                            "volume": item.get("vol"),
+                            "chg_oi": item.get("oi_change"),
+                        })
+                    except Exception:
+                        pass
+                ingest_chain({
+                    "symbol": snap.get("symbol") or C.SYMBOL,
+                    "spot": snap.get("spot"), "atm": snap.get("atm"),
+                    "expiry": snap.get("expiry"), "ts": snap.get("ts"),
+                    "rows": rows,
+                }, "angel_rest")
+                state["last_update"]=time.time(); state["error"]=None
+                try:
+                    commodities=client.commodity_quotes()
+                    put_commodities(
+                        (commodities.get("data") or {}).get("fetched") or [],
+                        "angel_api",
+                        time.time(),
+                    )
+                except Exception:
+                    pass
                 if time.time()-last_oi_save >= max(60, min(180, int(C.NSE_POLL_SEC))):
                     try:
                         save_oi_snapshot(C.SYMBOL, snap)
@@ -325,6 +358,45 @@ def nse_mcp_context(symbol:str="NIFTY",x_token:str=Header(None)):
         state["nse_mcp_checked"]=True
         state["nse_mcp_error"]=str(e)
         return {"connected":False,"endpoint":nse_mcp.url,"tool_count":0,"tools":[],"data":[],"error":str(e)[:500]}
+
+@app.get("/v1/mcp/context")
+def mcp_context(symbol:str="NIFTY",x_token:str=Header(None)):
+    auth(x_token)
+    key=symbol.upper()
+    now=time.monotonic()
+    if mcp_context_cache["key"] == key and mcp_context_cache["value"] is not None and now-mcp_context_cache["ts"] < 15:
+        return {**mcp_context_cache["value"],"cached":True,"cache_age_sec":round(now-mcp_context_cache["ts"],1)}
+    try:
+        value=nse_mcp.context(key)
+    except Exception as e:
+        value={"connected":False,"endpoint":nse_mcp.url,"tool_count":0,"tools":[],"data":[],"error":str(e)[:500]}
+    mcp_context_cache.update({"key":key,"ts":now,"value":value})
+    return {**value,"cached":False}
+
+@app.get("/v1/mcp/option-chain")
+def mcp_option_chain(symbol:str="NIFTY",expiry:Optional[str]=None,x_token:str=Header(None)):
+    auth(x_token)
+    key=symbol.upper() + "|" + str(expiry or "")
+    now=time.monotonic()
+    if mcp_option_cache["key"] == key and mcp_option_cache["value"] is not None and now-mcp_option_cache["ts"] < 15:
+        return {**mcp_option_cache["value"],"cached":True,"cache_age_sec":round(now-mcp_option_cache["ts"],1)}
+    try:
+        tool, value=nse_mcp.option_chain(symbol.upper(), expiry)
+        result={"available":True,"source":"official_nse_mcp","tool":tool,"value":value}
+    except Exception as e:
+        result={"available":False,"source":"official_nse_mcp","error":str(e)[:500]}
+    mcp_option_cache.update({"key":key,"ts":now,"value":result})
+    return {**result,"cached":False}
+
+@app.get("/v1/mcp/market-core")
+def mcp_market_core(symbol:str="NIFTY",x_token:str=Header(None)):
+    auth(x_token)
+    return market_core_snapshot(symbol.upper(), True)
+
+@app.get("/v1/mcp/commodities")
+def mcp_commodities(x_token:str=Header(None)):
+    auth(x_token)
+    return commodity_snapshot()
 @app.get("/v1/nse/option-chain.csv")
 def nse_option_chain_csv(symbol:str="NIFTY",expiry:Optional[str]=None,x_token:str=Header(None)):
     auth(x_token)
