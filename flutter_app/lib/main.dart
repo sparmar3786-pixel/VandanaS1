@@ -501,7 +501,11 @@ class _TerminalState extends State<Terminal> {
             leading: Icon(icons[i]),
             title: Text(screens[i]),
             selected: selected == i,
-            onTap: () { Navigator.pop(context); setState(() => selected = i); },
+            onTap: () {
+              Navigator.pop(context);
+              setState(() => selected = i);
+              Future<void>.microtask(refreshCurrentPage);
+            },
           ),
         ],
       )),
@@ -1419,14 +1423,59 @@ class _TerminalState extends State<Terminal> {
     FilledButton.icon(onPressed:fetchNews,icon:const Icon(Icons.refresh),label:const Text('REFRESH LIVE NEWS')),
   ]);
 
-  Widget marketDetailsPage() => ListView(padding:const EdgeInsets.all(16),children:<Widget>[
-    const Text('Market Details',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)),
-    const SizedBox(height:8),
-    infoCard('Indices','Angel One live market payload',Colors.blue),
-    ...liveMarket.map(indexCard),
-    infoCard('OI / breadth','Angel OI APIs are available through the backend.',Colors.green),
-  ]);
+  Widget marketDetailsPage() {
+    String v(dynamic x) => x == null || x.toString().trim().isEmpty ? "DATA UNAVAILABLE" : x.toString();
+    return RefreshIndicator(
+      onRefresh: () => refreshCurrentPage(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        children: <Widget>[
+          Row(children: <Widget>[
+            const Expanded(child: Text("MARKET DETAILS • PRO", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
+            IconButton(onPressed: pageBusy ? null : refreshCurrentPage, icon: const Icon(Icons.refresh)),
+          ]),
+          infoCard("LIVE SOURCE", "Angel One SmartAPI • NSE/BSE index quote feed", Colors.blue),
+          if (liveMarket.isEmpty)
+            infoCard("STATUS", "No live quote rows received. Connect Angel One and refresh.", Colors.orange),
+          ...liveMarket.whereType<Map>().map((raw) {
+            final q = Map<String, dynamic>.from(raw);
+            final ch = double.tryParse(v(q["netChange"])) ?? 0;
+            final color = ch > 0 ? Colors.green : ch < 0 ? Colors.red : Colors.blue;
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(13),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                  Row(children: <Widget>[
+                    Expanded(child: Text(v(q["tradingSymbol"] ?? q["name"] ?? q["symbol"]), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+                    Text(v(q["ltp"]), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: color)),
+                  ]),
+                  const SizedBox(height: 8),
+                  Row(children: <Widget>[
+                    Expanded(child: _detailMetric("OPEN", v(q["open"]))),
+                    Expanded(child: _detailMetric("HIGH", v(q["high"]))),
+                    Expanded(child: _detailMetric("LOW", v(q["low"]))),
+                    Expanded(child: _detailMetric("CHANGE", v(q["netChange"] ?? q["percentChange"]))),
+                  ]),
+                ]),
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+          infoCard("TRANSPORT", liveTransport + " • " + liveLastUpdated, Colors.blue),
+        ],
+      ),
+    );
+  }
 
+  Widget _detailMetric(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Text(label, style: const TextStyle(fontSize: 9)),
+          const SizedBox(height: 2),
+          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ]),
+      );
   Map<String,dynamic>? strategyRefresh;
   Future<void> refreshStrategy() async {
     try {
@@ -1814,13 +1863,7 @@ class _TerminalState extends State<Terminal> {
     infoCard('Navigation',screens.join(', '),Colors.blue),
   ]);
 
-  Widget dataPage(String title) => ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-    Row(children: <Widget>[Icon(icons[selected], size: 30), const SizedBox(width: 10), Text(title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))]),
-    const SizedBox(height: 14),
-    infoCard('Live data status', connection == 'Connected' ? 'Backend connected. This screen will use its corresponding live payload when available.' : 'Backend not connected. No fabricated market values are shown.', connection == 'Connected' ? Colors.green : Colors.orange),
-    const SizedBox(height: 10),
-    infoCard('Data source', title == 'NSE MCP' ? 'NSE MCP integration is configured by the backend.' : 'Corresponding API/data adapter is handled by the backend.', Colors.blue),
-  ]);
+  Widget dataPage(String title) => strategy377Page();
 
   String backendProvider() {
     final host = Uri.tryParse(cleanUrl(backendUrl))?.host.toLowerCase() ?? '';
@@ -1829,6 +1872,352 @@ class _TerminalState extends State<Terminal> {
     return 'Invalid backend';
   }
 
+  Widget strategy377Page() {
+    final strategy = strategy377Data["strategy"] is Map
+        ? Map<String, dynamic>.from(strategy377Data["strategy"] as Map)
+        : <String, dynamic>{};
+    final state = strategy377Data["state"] is Map
+        ? Map<String, dynamic>.from(strategy377Data["state"] as Map)
+        : <String, dynamic>{};
+    final evaluation = strategy377Data["evaluation"] is Map
+        ? Map<String, dynamic>.from(strategy377Data["evaluation"] as Map)
+        : <String, dynamic>{};
+    final decision = (evaluation["decision"] ?? "WAIT").toString();
+    final decisionColor = decision == "CALL BUY"
+        ? Colors.green
+        : decision == "PUT BUY"
+            ? Colors.red
+            : Colors.orange;
+    return RefreshIndicator(
+      onRefresh: () => refreshCurrentPage(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        children: <Widget>[
+          Row(children: <Widget>[
+            const Expanded(child: Text("STRATEGY 377", style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold))),
+            IconButton(onPressed: pageBusy ? null : refreshCurrentPage, icon: const Icon(Icons.refresh)),
+            IconButton(onPressed: pageBusy ? null : () => refreshCurrentPage(clearServerCache: true), icon: const Icon(Icons.delete_sweep)),
+          ]),
+          Card(
+            color: decisionColor.withValues(alpha: .12),
+            child: Padding(
+              padding: const EdgeInsets.all(15),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                Row(children: <Widget>[
+                  const Icon(Icons.rule, size: 30), const SizedBox(width: 10),
+                  Expanded(child: Text(strategy["name"]?.toString() ?? "Strategy 377", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
+                  Chip(label: Text(decision, style: TextStyle(color: decisionColor))),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: <Widget>[
+                  Expanded(child: _detailMetric("INDEX", strategy["index"]?.toString() ?? "NIFTY")),
+                  Expanded(child: _detailMetric("TF", strategy["tf"]?.toString() ?? "5m")),
+                  Expanded(child: _detailMetric("VERSION", strategy["version"]?.toString() ?? "377.1")),
+                ]),
+              ]),
+            ),
+          ),
+          Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            const Text("ENTRY RULES", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text("CALL: ${(strategy["entry_call"] as List?)?.join(" • ") ?? "DATA UNAVAILABLE"}"),
+            const SizedBox(height: 5),
+            Text("PUT: ${(strategy["entry_put"] as List?)?.join(" • ") ?? "DATA UNAVAILABLE"}"),
+            const SizedBox(height: 5),
+            Text("BLOCK: ${(strategy["block_if"] as List?)?.join(" • ") ?? "DATA UNAVAILABLE"}"),
+            const SizedBox(height: 5),
+            Text("TIME: ${strategy["time_filter"] ?? "DATA UNAVAILABLE"} • SL ${strategy["sl"] ?? "DATA UNAVAILABLE"} • TARGET ${strategy["target"] ?? "DATA UNAVAILABLE"}"),
+          ]))),
+          const SizedBox(height: 8),
+          Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            const Text("LIVE CONDITIONS", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            ...state.entries.map((e) => row(e.key, e.value)),
+          ]))),
+          const SizedBox(height: 8),
+          infoCard("ENGINE", "Deterministic strategy evaluation • paper only • no order placement", Colors.blue),
+          FilledButton.icon(onPressed: pageBusy ? null : refreshCurrentPage, icon: const Icon(Icons.refresh), label: const Text("REFRESH STRATEGY 377")),
+        ],
+      ),
+    );
+  }
+
+  Widget liveReferencePage(int index) {
+    String val(dynamic x) => x == null || x.toString().trim().isEmpty ? "DATA UNAVAILABLE" : x.toString();
+    final rows = liveOptionRows.whereType<Map>().map((x) => Map<String, dynamic>.from(x)).toList();
+    final engine = terminalData?["engine_state"] is Map
+        ? Map<String, dynamic>.from(terminalData!["engine_state"] as Map)
+        : <String, dynamic>{};
+    final nse = terminalData?["nse"] is Map
+        ? Map<String, dynamic>.from(terminalData!["nse"] as Map)
+        : <String, dynamic>{};
+    final computed = quantData["computed"] is Map
+        ? Map<String, dynamic>.from(quantData["computed"] as Map)
+        : <String, dynamic>{};
+    final stratEval = strategy377Data["evaluation"] is Map
+        ? Map<String, dynamic>.from(strategy377Data["evaluation"] as Map)
+        : <String, dynamic>{};
+    final strategy = strategy377Data["strategy"] is Map
+        ? Map<String, dynamic>.from(strategy377Data["strategy"] as Map)
+        : <String, dynamic>{};
+
+    Map<String, dynamic>? nearest(String side) {
+      if (rows.isEmpty) return null;
+      final spot = double.tryParse((optionSpot ?? "").toString());
+      final candidates = rows.where((r) => (r["type"] ?? "").toString().toUpperCase() == side).toList();
+      if (candidates.isEmpty) return null;
+      candidates.sort((a, b) {
+        final ak = double.tryParse((a["strike"] ?? "").toString()) ?? 0;
+        final bk = double.tryParse((b["strike"] ?? "").toString()) ?? 0;
+        return spot == null ? 0 : (ak - spot).abs().compareTo((bk - spot).abs());
+      });
+      return candidates.first;
+    }
+
+    final ceAtm = nearest("CE");
+    final peAtm = nearest("PE");
+    final titleMap = <int, String>{20:"MARKET OVERVIEW",21:"OI HEATMAP",22:"PREMIUM / VOLUME",23:"GREEKS / IV SURFACE",24:"SIGNAL FLOW",25:"MARKET REGIME",26:"TRADE PLANS (S+)",27:"BACKTEST",28:"STRATEGY REGISTRY",29:"AI 6-LAYER PANEL"};
+    final title = titleMap[index] ?? "LIVE MODULE";
+
+    Widget proHeader() => Row(children: <Widget>[
+      Expanded(child: Text(title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
+      IconButton(onPressed: pageBusy ? null : refreshCurrentPage, icon: const Icon(Icons.refresh)),
+      IconButton(onPressed: pageBusy ? null : () => refreshCurrentPage(clearServerCache: true), icon: const Icon(Icons.delete_sweep)),
+    ]);
+
+    Widget chipIndexSelector() => SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: <Widget>[
+        for (final sym in const <String>["NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX","BANKEX"])
+          Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(
+            label: Text(sym), selected: selectedOptionSymbol == sym, onSelected: (ok) {
+              if (!ok) return;
+              setState(() => selectedOptionSymbol = sym);
+              refreshCurrentPage(clearServerCache: true);
+            },
+          )),
+      ]),
+    );
+
+    Widget marketOverview() => Column(children: <Widget>[
+      chipIndexSelector(), const SizedBox(height: 8),
+      Row(children: <Widget>[
+        Expanded(child: infoCard("ANGEL", connection == "Connected" ? "CONNECTED" : "CHECK CONNECTION", connection == "Connected" ? Colors.green : Colors.orange)),
+        const SizedBox(width: 8), Expanded(child: infoCard("SPOT", val(optionSpot ?? engine["index_ltp"]), Colors.blue)),
+      ]),
+      Card(child: Column(children: <Widget>[
+        for (final raw in liveIndices.take(10)) _quoteCard(raw),
+        if (liveIndices.isEmpty) const ListTile(title: Text("Waiting for live Indian indices")),
+      ])),
+    ]);
+
+    Widget heatmap() {
+      final sorted = List<Map<String,dynamic>>.from(rows)..sort((a,b) => (double.tryParse((a["strike"] ?? "0").toString()) ?? 0).compareTo(double.tryParse((b["strike"] ?? "0").toString()) ?? 0));
+      return Column(children: <Widget>[
+        chipIndexSelector(), const SizedBox(height: 8),
+        Row(children: <Widget>[Expanded(child: infoCard("SPOT", val(optionSpot), Colors.blue)), Expanded(child: infoCard("EXPIRY", val(optionExpiry), Colors.purple))]),
+        Card(child: Padding(padding: const EdgeInsets.all(10), child: Column(children: <Widget>[
+          const Row(children: <Widget>[Expanded(child: Text("CE OI / Δ", style: TextStyle(fontWeight: FontWeight.bold))), Expanded(child: Center(child: Text("STRIKE", style: TextStyle(fontWeight: FontWeight.bold)))), Expanded(child: Text("PE OI / Δ", textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.bold)))]),
+          const Divider(),
+          ...sorted.take(25).map((r) {
+            final side = (r["type"] ?? "").toString().toUpperCase();
+            final strike = val(r["strike"]);
+            return ListTile(
+              dense: true, contentPadding: EdgeInsets.zero,
+              title: Text("${side == "CE" ? "CALL" : "PUT"} $strike"),
+              subtitle: Text("LTP ${val(r["ltp"])} • OI ${val(r["oi"])} • Δ ${val(r["oiChangePct"] ?? r["oi_change"])}"),
+              trailing: Chip(label: Text(side)),
+            );
+          }),
+          if (rows.isEmpty) const Padding(padding: EdgeInsets.all(18), child: Text("LIVE OI DATA UNAVAILABLE")),
+        ]))),
+      ]);
+    }
+
+    Widget premiumVolume() {
+      num ceVol = 0, peVol = 0; num cePrem = 0, pePrem = 0;
+      for (final r in rows) {
+        final volume = num.tryParse((r["volume"] ?? "0").toString()) ?? 0;
+        final ltp = num.tryParse((r["ltp"] ?? "0").toString()) ?? 0;
+        if ((r["type"] ?? "").toString().toUpperCase() == "CE") { ceVol += volume; cePrem += ltp; }
+        if ((r["type"] ?? "").toString().toUpperCase() == "PE") { peVol += volume; pePrem += ltp; }
+      }
+      final spread = (num.tryParse((ceAtm?["ltp"] ?? "0").toString()) ?? 0) - (num.tryParse((peAtm?["ltp"] ?? "0").toString()) ?? 0);
+      return Column(children: <Widget>[
+        chipIndexSelector(), const SizedBox(height: 8),
+        Row(children: <Widget>[
+          Expanded(child: infoCard("CE VOLUME", ceVol.toStringAsFixed(0), Colors.green)),
+          const SizedBox(width: 8), Expanded(child: infoCard("PE VOLUME", peVol.toStringAsFixed(0), Colors.red)),
+          const SizedBox(width: 8), Expanded(child: infoCard("ATM SPREAD", spread.toStringAsFixed(2), Colors.blue)),
+        ]),
+        Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          const Text("ATM PREMIUM", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          row("CE LTP", val(ceAtm?["ltp"])), row("PE LTP", val(peAtm?["ltp"])),
+          row("CE IV", val(ceAtm?["iv"])), row("PE IV", val(peAtm?["iv"])),
+          row("Total CE Premium samples", cePrem.toStringAsFixed(2)), row("Total PE Premium samples", pePrem.toStringAsFixed(2)),
+        ]))),
+      ]);
+    }
+
+    Widget greeks() => Column(children: <Widget>[
+      chipIndexSelector(), const SizedBox(height: 8),
+      Row(children: <Widget>[
+        Expanded(child: infoCard("SPOT", val(optionSpot), Colors.blue)),
+        const SizedBox(width: 8), Expanded(child: infoCard("EXPIRY", val(optionExpiry), Colors.purple)),
+      ]),
+      Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        const Text("ATM GREEKS", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        _greeksRow("CE", ceAtm),
+        const Divider(),
+        _greeksRow("PE", peAtm),
+      ]))),
+      infoCard("NOTE", "Greeks are displayed only when returned by the live Angel One/NSE backend adapter.", Colors.blue),
+    ]);
+
+    Widget signalFlow() {
+      final stages = <Map<String,dynamic>>[
+        {"name":"ANGEL ONE FEED","ok":connection == "Connected"},
+        {"name":"ENGINE","ok":engine["available"] == true},
+        {"name":"STRATEGY 377","ok":strategy377Data.isNotEmpty && stratEval.isNotEmpty},
+        {"name":"AI VALIDATION","ok":aiStatusData["total"] != null},
+      ];
+      return Column(children: <Widget>[
+        Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(children: <Widget>[
+          for (int i=0; i<stages.length; i++) ...<Widget>[
+            ListTile(dense: true, leading: Icon(stages[i]["ok"] == true ? Icons.check_circle : Icons.radio_button_unchecked, color: stages[i]["ok"] == true ? Colors.green : Colors.orange), title: Text(stages[i]["name"] as String), trailing: Text(stages[i]["ok"] == true ? "READY" : "WAITING")),
+            if (i < stages.length - 1) const Divider(height: 1),
+          ],
+        ]))),
+        infoCard("CURRENT SIGNAL", val(signal?["action"] ?? engine["signal_status"]), Colors.blue),
+        row("Option", val(signal?["optionSymbol"] ?? engine["option_symbol"])),
+        row("Entry", val(signal?["entry"] ?? engine["entry"])),
+        row("SL", val(signal?["sl"] ?? engine["stop_loss"])),
+        row("Target", val(signal?["target"] ?? engine["target"])),
+      ]);
+    }
+
+    Widget regime() => Column(children: <Widget>[
+      Row(children: <Widget>[
+        Expanded(child: infoCard("TREND", val(engine["trend"] ?? nse["trend"]), Colors.blue)),
+        const SizedBox(width: 8), Expanded(child: infoCard("RSI 14", val(computed["rsi_14"]), Colors.purple)),
+      ]),
+      Row(children: <Widget>[
+        Expanded(child: infoCard("EMA 8", val(computed["ema_8"]), Colors.green)),
+        const SizedBox(width: 8), Expanded(child: infoCard("EMA 13", val(computed["ema_13"]), Colors.orange)),
+      ]),
+      Row(children: <Widget>[
+        Expanded(child: infoCard("MACD", val(computed["macd"]), Colors.blue)),
+        const SizedBox(width: 8), Expanded(child: infoCard("REALIZED VOL", val(computed["realized_vol"]), Colors.red)),
+      ]),
+      Row(children: <Widget>[
+        Expanded(child: infoCard("ATR 14", val(computed["atr_14"]), Colors.purple)),
+        const SizedBox(width: 8), Expanded(child: infoCard("VWAP", val(computed["vwap"]), Colors.green)),
+      ]),
+      infoCard("REGIME INPUT", "Deterministic quant layer • no fabricated indicators", Colors.blue),
+    ]);
+
+    Widget tradePlans() {
+      final action = (signal?["action"] ?? stratEval["decision"] ?? "WAIT").toString().replaceAll("_", " ");
+      final color = action.contains("CALL") ? Colors.green : action.contains("PUT") ? Colors.red : Colors.orange;
+      return Column(children: <Widget>[
+        Card(color: color.withValues(alpha: .12), child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Row(children: <Widget>[Icon(Icons.view_list, color: color, size: 30), const SizedBox(width: 10), Expanded(child: Text("S+ TRADE PLAN", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))), Chip(label: Text(action))]),
+          const SizedBox(height: 10),
+          row("Underlying", val(signal?["underlying"] ?? engine["symbol"])),
+          row("Option", val(signal?["optionSymbol"] ?? engine["option_symbol"])),
+          row("Entry", val(signal?["entry"] ?? engine["entry"])),
+          row("Stop Loss", val(signal?["sl"] ?? engine["stop_loss"])),
+          row("Target", val(signal?["target"] ?? engine["target"])),
+          row("Score", val(signal?["score"] ?? engine["score"])),
+        ]))),
+        infoCard("STRATEGY", strategy["name"]?.toString() ?? "Strategy 377", Colors.blue),
+        infoCard("STATUS", action == "WAIT" ? "No qualifying live setup." : "Live engine plan returned. Paper only.", color),
+      ]);
+    }
+
+    Widget backtest() => Column(children: <Widget>[
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        const Text("STRATEGY 377 • BACKTEST", style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text("Timeframe: ${strategy["tf"] ?? "5m"} • Version: ${strategy["version"] ?? "377.1"}"),
+        const SizedBox(height: 6),
+        const Text("No synthetic performance numbers are shown. Use the backend backtest endpoint with historical bars for measured results."),
+      ]))),
+      FilledButton(onPressed: () => setState(() => selected = 13), child: const Text("OPEN STRATEGY 377")),
+    ]);
+
+    Widget registry() => Column(children: <Widget>[
+      Card(child: ListTile(leading: const Icon(Icons.verified), title: const Text("Strategy 377"), subtitle: Text("${strategy["tf"] ?? "5m"} • ${(strategy["entry_call"] as List?)?.length ?? 0} call conditions • ${(strategy["entry_put"] as List?)?.length ?? 0} put conditions"), trailing: Chip(label: Text(strategy377Data.isEmpty ? "LOAD" : "LIVE")))),
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        const Text("VALIDATION", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        row("Decision", val(stratEval["decision"])),
+        row("Matched", val((stratEval["matched"] as List?)?.join(", "))),
+        row("Blocked", val((stratEval["blocked"] as List?)?.join(", "))),
+      ]))),
+      infoCard("POLICY", "Deterministic rules only • no arbitrary strategy code • paper trading only", Colors.blue),
+    ]);
+
+    Widget aiLayers() => Column(children: <Widget>[
+      Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        const Text("SIX AI LAYERS", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        if (aiStatusData["providers"] is List)
+          ...(aiStatusData["providers"] as List).map((raw) {
+            final p = raw is Map ? Map<String,dynamic>.from(raw) : <String,dynamic>{};
+            final live = p["live"] == true || p["status"] == "ok";
+            final configured = p["configured"] == true || p["status"] != "not_configured";
+            return ListTile(
+              dense: true, contentPadding: EdgeInsets.zero,
+              leading: Icon(live ? Icons.check_circle : Icons.error_outline, color: live ? Colors.green : Colors.orange),
+              title: Text(val(p["name"])),
+              subtitle: Text(val(p["model"])),
+              trailing: Chip(label: Text(live ? "LIVE" : configured ? "CONFIGURED" : "KEY MISSING")),
+            );
+          })
+        else
+          const ListTile(title: Text("Tap refresh to probe six server-side AI providers.")),
+      ]))),
+      FilledButton.icon(onPressed: () => setState(() => selected = 15), icon: const Icon(Icons.psychology), label: const Text("OPEN AI MODELS")),
+    ]);
+
+    Widget body;
+    if (index == 20) body = marketOverview();
+    else if (index == 21) body = heatmap();
+    else if (index == 22) body = premiumVolume();
+    else if (index == 23) body = greeks();
+    else if (index == 24) body = signalFlow();
+    else if (index == 25) body = regime();
+    else if (index == 26) body = tradePlans();
+    else if (index == 27) body = backtest();
+    else if (index == 28) body = registry();
+    else body = aiLayers();
+
+    return RefreshIndicator(
+      onRefresh: () => refreshCurrentPage(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+        children: <Widget>[proHeader(), const SizedBox(height: 4), body, const SizedBox(height: 8),
+          Text("LIVE • Angel One / deterministic backend • last update $liveLastUpdated", textAlign: TextAlign.center, style: const TextStyle(fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
+  Widget _greeksRow(String side, Map<String,dynamic>? r) {
+    String v(String key) => r == null || r[key] == null || r[key].toString().trim().isEmpty ? "DATA UNAVAILABLE" : r[key].toString();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      Text(side, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: side == "CE" ? Colors.green : Colors.red)),
+      const SizedBox(height: 6),
+      Row(children: <Widget>[
+        Expanded(child: _detailMetric("IV", v("iv"))),
+        Expanded(child: _detailMetric("DELTA", v("delta"))),
+        Expanded(child: _detailMetric("GAMMA", v("gamma"))),
+        Expanded(child: _detailMetric("VEGA", v("vega"))),
+        Expanded(child: _detailMetric("THETA", v("theta"))),
+      ]),
+    ]);
+  }
   Widget referenceLayoutScreen(int index) {
     final specs = <Map<String,dynamic>>[
       {'title':'Splash / Launch','subtitle':'Smart Analysis • Disciplined Execution • AI Powered','icon':Icons.rocket_launch},
