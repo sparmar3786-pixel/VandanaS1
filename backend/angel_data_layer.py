@@ -321,5 +321,9 @@ def build_ai_read(client, symbol="NIFTY", interval="FIVE_MINUTE", days=5):
             "shape": list(model.shape) if model is not None else None,
             "features": ["return", "RSI", "MACD/ATR", "Bollinger position", "EMA21 ratio", "range/ATR"],
         },
+        "close_series": [_json_number(x) for x in closed["close"].tail(240).tolist()],
+        "high_series": [_json_number(x) for x in closed["high"].tail(240).tolist()],
+        "low_series": [_json_number(x) for x in closed["low"].tail(240).tolist()],
+        "volume_series": [_json_number(x) for x in closed["volume"].tail(240).tolist()],
         "rule": "Only supplied/live evidence is used. Missing or conflicting data must be treated as WAIT; this layer never places orders.",
     }
