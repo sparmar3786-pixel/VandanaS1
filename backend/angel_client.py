@@ -199,6 +199,27 @@ class AngelClient:
             raise RuntimeError("Angel One session is not connected.")
         return self.api
 
+    def clear_market_cache(self):
+        # Clear only in-memory market snapshots; credentials/session remain intact.
+        with self.ws_lock:
+            self.ws_quotes.clear()
+        self.last_chain_cache.clear()
+        self.last_chain_cache_ts.clear()
+        self.last_snapshot = None
+        self.chain = {}
+        self.strikes = []
+        self.expiry = None
+        return {
+            "ok": True,
+            "cleared": [
+                "websocket_quotes",
+                "option_chain_cache",
+                "last_snapshot",
+                "instrument_chain",
+            ],
+            "session_preserved": self.api is not None,
+        }
+
     def index_catalog(self):
         master=self._master()
         rows=[]; seen=set()
