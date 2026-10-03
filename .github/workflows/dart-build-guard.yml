@@ -65,10 +65,13 @@ jobs:
           test -f pubspec.lock
           flutter pub deps --style=compact
 
-      - name: Check Dart formatting
+      - name: Format Dart source before validation
         working-directory: flutter_app
         run: |
+          dart format lib
           dart format --output=none --set-exit-if-changed lib
+          git diff --check
+
 
       - name: Analyze Dart source
         working-directory: flutter_app
