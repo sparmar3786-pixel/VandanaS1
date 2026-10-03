@@ -86,7 +86,7 @@ def _openai(p, text):
             service_tier="default",
             input=[{"role":"system","content":SYSTEM},{"role":"user","content":text}],
             text={"format":{"type":"text"},"verbosity":"medium"},
-            reasoning={"effort":"medium","summary":"auto"},
+            reasoning={"effort":"medium","mode":"standard","summary":"auto"},
             tools=[],
             stream=True,
             store=True,
