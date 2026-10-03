@@ -282,6 +282,7 @@ def angel_option_chain(symbol:str="NIFTY",count:int=200,x_token:str=Header(None)
                         row.update({"delta":g.get("delta"),"gamma":g.get("gamma"),"theta":g.get("theta"),"vega":g.get("vega"),"iv":g.get("impliedVolatility")})
             except Exception:
                 pass
+        ingest_chain(result, "angel_rest")
         return result
     except Exception as e: raise HTTPException(502,str(e))
 
