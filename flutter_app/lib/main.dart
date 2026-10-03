@@ -93,6 +93,9 @@ class _TerminalState extends State<Terminal> {
   WebSocketChannel? liveChannel;
   StreamSubscription<dynamic>? liveSubscription;
   Timer? liveHttpTimer;
+  bool pageBusy = false;
+  String cacheStatus = 'Cache: live';
+  int optionStrikeCount = 15;
 
   @override void initState() {
     super.initState();
@@ -188,7 +191,27 @@ class _TerminalState extends State<Terminal> {
       liveTransport = (d['live_transport'] ?? 'http').toString().toUpperCase();
       liveLastUpdated = DateTime.now().toLocal().toString().substring(11, 19);
       final s = d['signals'];
-      signal = s is Map<String, dynamic> ? s : signal;
+      final engine = d['engine_state'];
+      if (s is Map<String, dynamic> && s.isNotEmpty) {
+        signal = s;
+      } else if (engine is Map) {
+        signal = <String, dynamic>{
+          'action': engine['signal_status'] ?? 'WAIT',
+          'underlying': engine['symbol'],
+          'optionSymbol': engine['option_symbol'],
+          'spot': engine['index_ltp'],
+          'ltp': engine['option_ltp'],
+          'strike': engine['strike'],
+          'entry': engine['entry'],
+          'stop_loss': engine['stop_loss'],
+          'sl': engine['stop_loss'],
+          'target': engine['target'],
+          'score': engine['score'],
+          'reasons': d['strategy'] is Map
+              ? (d['strategy'] as Map)['reasons']
+              : <dynamic>[],
+        };
+      }
       connection = server && angel ? 'Connected' : server ? 'Backend connected / Angel not connected' : 'Backend not connected';
       final m = d['nse_mcp'];
       nseMcpStatus = m is Map && m['connected'] == true ? 'Connected' : 'Not connected';
@@ -222,8 +245,28 @@ class _TerminalState extends State<Terminal> {
       setState(() {
         terminalData = decoded;
         final s = decoded['signals'];
+        final engine = decoded['engine_state'];
         final m = decoded['nse_mcp'];
-        signal = s is Map<String, dynamic> ? s : null;
+        if (s is Map<String, dynamic> && s.isNotEmpty) {
+          signal = s;
+        } else if (engine is Map) {
+          signal = <String, dynamic>{
+            'action': engine['signal_status'] ?? 'WAIT',
+            'underlying': engine['symbol'],
+            'optionSymbol': engine['option_symbol'],
+            'spot': engine['index_ltp'],
+            'ltp': engine['option_ltp'],
+            'strike': engine['strike'],
+            'entry': engine['entry'],
+            'stop_loss': engine['stop_loss'],
+            'sl': engine['stop_loss'],
+            'target': engine['target'],
+            'score': engine['score'],
+            'reasons': <dynamic>[],
+          };
+        } else {
+          signal = null;
+        }
         connection = server && angel
             ? 'Connected'
             : server
@@ -238,6 +281,115 @@ class _TerminalState extends State<Terminal> {
     } catch (_) {
       if (mounted) setState(() => connection = 'Backend not connected');
     }
+  }
+
+  Future<void> refreshCurrentPage({bool clearServerCache = false}) async {
+    if (pageBusy) return;
+    pageBusy = true;
+    if (mounted) setState(() => cacheStatus = clearServerCache ? 'Clearing live cache...' : 'Refreshing live data...');
+    try {
+      final service = liveDataService;
+      if (service == null) return;
+
+      if (clearServerCache) {
+        await service.clearCache();
+        if (mounted) setState(() => cacheStatus = 'Cache cleared • fetching fresh data');
+      }
+
+      switch (selected) {
+        case 0:
+          await Future.wait<void>(<Future<void>>[fetchTerminal(), fetchIndices()]);
+          break;
+        case 1:
+          await fetchIndices();
+          break;
+        case 2:
+          await fetchCommodities();
+          break;
+        case 3:
+          await Future.wait<void>(<Future<void>>[fetchTerminal(), refreshStrategy()]);
+          break;
+        case 4:
+          await Future.wait<void>(<Future<void>>[fetchOptionRows(), fetchOIBuild()]);
+          break;
+        case 6:
+          await fetchCandles();
+          break;
+        case 7:
+          await fetchOptionRows();
+          break;
+        case 8:
+          await fetchNews();
+          break;
+        case 9:
+          await fetchAngelMarket();
+          break;
+        case 14:
+          await fetchStrategy();
+          break;
+        default:
+          await Future.wait<void>(<Future<void>>[
+            fetchLiveSnapshot(),
+            fetchIndices(),
+          ]);
+      }
+
+      if (mounted) {
+        setState(() {
+          cacheStatus = clearServerCache ? 'Fresh data loaded • cache reset' : 'Fresh data loaded';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              clearServerCache
+                  ? 'Live cache cleared and fresh data fetched.'
+                  : 'Live data refreshed.',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => cacheStatus = 'Refresh failed');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Refresh failed: $error')),
+        );
+      }
+    } finally {
+      pageBusy = false;
+    }
+  }
+
+  Future<void> showCacheActions() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.refresh),
+              title: const Text('Refresh current page'),
+              subtitle: const Text('Fetch latest Angel One / backend data'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                refreshCurrentPage();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_sweep),
+              title: const Text('Clear live market cache'),
+              subtitle: const Text('Keeps Angel One login/session intact'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                refreshCurrentPage(clearServerCache: true);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> downloadNseCsv() async {
@@ -285,8 +437,21 @@ class _TerminalState extends State<Terminal> {
     appBar: AppBar(
       title: Text(screens[selected]),
       actions: <Widget>[
-        IconButton(onPressed: fetchTerminal, icon: const Icon(Icons.refresh)),
-        IconButton(onPressed: () => setState(() => darkMode = !darkMode), tooltip: 'Light / Dark mode', icon: Icon(darkMode ? Icons.light_mode : Icons.dark_mode)),
+        IconButton(
+          tooltip: 'Refresh current page',
+          onPressed: pageBusy ? null : refreshCurrentPage,
+          icon: Icon(pageBusy ? Icons.sync : Icons.refresh),
+        ),
+        IconButton(
+          tooltip: 'Refresh / Clear live cache',
+          onPressed: showCacheActions,
+          icon: const Icon(Icons.cleaning_services_outlined),
+        ),
+        IconButton(
+          onPressed: () => setState(() => darkMode = !darkMode),
+          tooltip: 'Light / Dark mode',
+          icon: Icon(darkMode ? Icons.light_mode : Icons.dark_mode),
+        ),
         IconButton(onPressed: openSettings, icon: const Icon(Icons.settings)),
       ],
     ),
