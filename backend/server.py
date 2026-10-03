@@ -372,8 +372,10 @@ def ai_context(index:str="NIFTY",x_token:str=Header(None)):
         "pcr":strategy.get("pcr"),"top_ce_oi":strategy.get("highest_ce_oi",[]),"top_pe_oi":strategy.get("highest_pe_oi",[]),
         "trend":strategy.get("trend"),"support":strategy.get("support"),"resistance":strategy.get("resistance"),
         "max_pain":strategy.get("max_pain")
-    },"ai_rule":"Reconcile Angel API + official NSE MCP + Internet evidence. Missing or conflicting evidence forces WAIT."}
+    }
+    quant_payload["ai_rule"]="Reconcile Angel API + official NSE MCP + Internet evidence + deterministic quant evidence. Missing or conflicting evidence forces WAIT."
     quant_payload["quant_evidence"]=build_quant_evidence(quant_payload)
+    return quant_payload
     return quant_payload
 @app.get("/v1/ai/provider-status")
 def ai_provider_status(x_token:str=Header(None),probe:bool=False):
