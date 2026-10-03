@@ -56,6 +56,11 @@ jobs:
           flutter --version
           dart --version
 
+      - name: Generate Android platform for compile verification
+        working-directory: flutter_app
+        run: |
+          flutter create . --platforms=android --project-name parmar_trading --org com.parmar
+
       - name: Clean Flutter build artifacts
         working-directory: flutter_app
         run: flutter clean
