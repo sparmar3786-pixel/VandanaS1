@@ -220,11 +220,19 @@ class _ServerAiPageState extends State<ServerAiPage> {
                 : <String, dynamic>{};
             final text = (m['text'] ?? '').toString();
             final error = (m['error'] ?? '').toString();
-            final match = RegExp(
-              r'(?im)^\s*STATE\s*:\s*(CALL BUY|PUT BUY|WAIT|NO QUALIFYING TRADE)',
-            ).firstMatch(text);
-            final state = match?.group(1) ??
-                (m['status'] == 'ok_local' ? 'LOCAL' : 'WAIT');
+            String parsedState = 'WAIT';
+            for (final candidate in const <String>[
+              'CALL BUY',
+              'PUT BUY',
+              'NO QUALIFYING TRADE',
+              'WAIT',
+            ]) {
+              if (text.toUpperCase().contains('STATE: ' + candidate)) {
+                parsedState = candidate;
+                break;
+              }
+            }
+            final state = m['status'] == 'ok_local' ? 'LOCAL' : parsedState;
             final statusLabel = providerState(m);
 
             return Card(
@@ -273,6 +281,29 @@ class _ServerAiPageState extends State<ServerAiPage> {
       ),
     );
   }
+
+  Widget infoCard(String label, String value, Color color) => Card(
+        color: color.withValues(alpha: .10),
+        child: Padding(
+          padding: const EdgeInsets.all(11),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.info_outline, color: color, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(label, style: const TextStyle(fontSize: 11)),
+                    const SizedBox(height: 3),
+                    Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 
   Widget _metric(String label, String value) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
