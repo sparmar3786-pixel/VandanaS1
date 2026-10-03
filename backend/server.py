@@ -22,6 +22,7 @@ from strategy_mcp_server import mount_strategy_mcp
 from engine_contract import engine_state, strategy_state
 from angel_data_layer import build_ai_read
 from quant.live import build_quant_evidence
+from strategy_377 import evaluate_live as evaluate_strategy_377
 
 app=FastAPI(title="NSE Algo Signal API"); app.add_middleware(GZipMiddleware,minimum_size=1024); app.include_router(strategy_router); app.include_router(market_core_router); app.include_router(council_router); app.include_router(alert_router); eng=Engine(); client=AngelClient(); nse=NSEClient(); nse_mcp=NSEMCP()
 state={"error":None,"nse_error":None,"last_update":None,"angel_message":"Not connected","nse_mcp_error":None,"nse_mcp_checked":False}
@@ -346,6 +347,15 @@ def _strategy_refresh(index: str = "NIFTY"):
 def strategy_refresh(index:str="NIFTY",x_token:str=Header(None)):
     auth(x_token)
     return _strategy_refresh(index)
+
+@app.get("/v1/strategy/377")
+def strategy_377_live(x_token:str=Header(None)):
+    auth(x_token)
+    try:
+        state_377 = _strategy_refresh("NIFTY")
+        return evaluate_strategy_377(state_377)
+    except Exception as e:
+        raise HTTPException(502, "Strategy 377 unavailable: " + str(e)[:300])
 
 @app.get("/v1/ai/context")
 def ai_context(index:str="NIFTY",x_token:str=Header(None)):
