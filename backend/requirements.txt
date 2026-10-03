@@ -1,0 +1,13 @@
+fastapi==0.115.0
+uvicorn[standard]>=0.31.1,<1
+smartapi-python
+pyotp
+requests
+logzero>=1.7.0
+websocket-client
+numpy
+python-dotenv
+joblib
+mcp==1.28.0
+pandas
+anthropic
