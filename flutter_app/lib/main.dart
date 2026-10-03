@@ -1900,7 +1900,26 @@ class _TerminalState extends State<Terminal> {
     infoCard('Navigation',screens.join(', '),Colors.blue),
   ]);
 
-  Widget dataPage(String title) => strategy377Page();
+  Widget dataPage(String title) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          Text(title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          infoCard(
+            'Live data status',
+            connection == 'Connected'
+                ? 'Backend connected. Use the page-specific live module for this data stream.'
+                : 'Backend not connected. No fabricated market values are shown.',
+            connection == 'Connected' ? Colors.green : Colors.orange,
+          ),
+          const SizedBox(height: 10),
+          infoCard(
+            'Source',
+            'Server-side Angel One / NSE adapter',
+            Colors.blue,
+          ),
+        ],
+      );
 
   String backendProvider() {
     final host = Uri.tryParse(cleanUrl(backendUrl))?.host.toLowerCase() ?? '';
@@ -2111,7 +2130,7 @@ class _TerminalState extends State<Terminal> {
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 child: Row(children: <Widget>[
                   Expanded(child: Text("CALL OI", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
-                  Expanded(child: Center(child: Text("STRIKE", style: TextStyle(fontWeight: FontWeight.bold))),),
+                  Expanded(child: Center(child: Text("STRIKE", style: TextStyle(fontWeight: FontWeight.bold)))),
                   Expanded(child: Text("PUT OI", textAlign: TextAlign.right, style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
                 ]),
               ),
