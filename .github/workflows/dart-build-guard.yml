@@ -65,6 +65,52 @@ jobs:
         working-directory: flutter_app
         run: rm -f test/widget_test.dart
 
+      - name: Configure Android desugaring for compile verification
+        working-directory: flutter_app
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("android/app/build.gradle.kts")
+          if p.exists():
+              text = p.read_text()
+              if "isCoreLibraryDesugaringEnabled" not in text:
+                  text = text.replace(
+                      "    compileOptions {",
+                      "    compileOptions {\n        isCoreLibraryDesugaringEnabled = true",
+                      1,
+                  )
+              if "coreLibraryDesugaring(" not in text:
+                  text += (
+                      "\n\ndependencies {\n"
+                      "    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")\n"
+                      "}\n"
+                  )
+              p.write_text(text)
+          else:
+              p = Path("android/app/build.gradle")
+              text = p.read_text()
+              if "coreLibraryDesugaringEnabled" not in text:
+                  text = text.replace(
+                      "    compileOptions {",
+                      "    compileOptions {\n        coreLibraryDesugaringEnabled true",
+                      1,
+                  )
+              if "coreLibraryDesugaring" not in text:
+                  text += (
+                      "\n\ndependencies {\n"
+                      "    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n"
+                      "}\n"
+                  )
+              p.write_text(text)
+          PY
+          grep -n "CoreLibraryDesugaring\|coreLibraryDesugaring\|desugar_jdk_libs" android/app/build.gradle*
+          test -f android/app/build.gradle.kts
+          grep -q "isCoreLibraryDesugaringEnabled = true" android/app/build.gradle.kts
+          grep -q "coreLibraryDesugaring" android/app/build.gradle.kts
+          grep -q "desugar_jdk_libs:2.1.4" android/app/build.gradle.kts
+
       - name: Clean Flutter build artifacts
         working-directory: flutter_app
         run: flutter clean
