@@ -241,25 +241,41 @@ class _TerminalState extends State<Terminal> {
   }
 
   Future<void> downloadNseCsv() async {
-    setState(() => csvStatus = 'Fetching NSE option chain...');
+    if (mounted) setState(() => csvStatus = 'Fetching NSE option chain...');
     try {
-      final response = await http.get(
-        Uri.parse(backendUrl + '/v1/nse/option-chain.csv?symbol=NIFTY'),
-        headers: <String,String>{'x-token': apiToken},
-      ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        setState(() => csvStatus = 'NSE CSV unavailable: HTTP ' + response.statusCode.toString());
-        return;
+      final service = liveDataService;
+      if (service == null) {
+        throw StateError('Live data service is not initialized.');
       }
+
+      final response = await service.getRaw(
+        '/v1/nse/option-chain.csv',
+        query: const <String, String>{'symbol': 'NIFTY'},
+        timeout: const Duration(seconds: 20),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw LiveDataException(
+          statusCode: response.statusCode,
+          path: '/v1/nse/option-chain.csv',
+          message: 'NSE CSV unavailable.',
+        );
+      }
+
       await FileSaver.instance.saveFile(
         name: 'NIFTY_NSE_option_chain',
         bytes: response.bodyBytes,
         fileExtension: 'csv',
         mimeType: MimeType.csv,
       );
-      if (mounted) setState(() => csvStatus = 'NIFTY NSE option-chain CSV saved.');
-    } catch (e) {
-      if (mounted) setState(() => csvStatus = 'CSV download failed. ' + e.toString());
+
+      if (mounted) {
+        setState(() => csvStatus = 'NIFTY NSE option-chain CSV saved.');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => csvStatus = 'CSV download failed. $error');
+      }
     }
   }
 
