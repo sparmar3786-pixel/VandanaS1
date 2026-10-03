@@ -43,47 +43,44 @@ class _ServerAiPageState extends State<ServerAiPage> {
     if (busy || widget.backendUrl.trim().isEmpty) return;
     setState(() {
       busy = true;
-      status = 'Collecting live market context...';
+      status = 'Collecting live terminal snapshot...';
     });
 
     final api = service;
     try {
       try {
-        final contextSnapshot = await api.aiContext(index: symbol);
-        if (contextSnapshot.isNotEmpty) {
-          snapshot = contextSnapshot;
-        }
+        final live = await api.terminal();
+        if (live.isNotEmpty) snapshot = live;
       } catch (_) {
-        // Keep the latest dashboard snapshot as a safe fallback.
+        // Keep the latest known terminal snapshot.
       }
 
       final d = await api.aiValidate(snapshot);
       if (mounted) {
         setState(() {
           result = d;
-          status = 'Live validation complete • ' +
+          status = 'Live AI validation complete • ' +
               DateTime.now().toLocal().toString().substring(11, 19);
         });
       }
-
-      try {
-        final p = await api.aiProviderStatus(probe: false);
-        if (mounted) setState(() => providerStatus = p);
-      } catch (_) {}
     } catch (e) {
       if (mounted) {
         setState(() {
-          result = <String, dynamic>{
-            'final': 'WAIT',
-            'cross_verified': false,
-            'reason': 'AI request failed safely; provider details are shown below.',
+          status = 'AI request failed • previous result retained';
+        });
+      }
+    }
+
+    try {
+      final p = await api.aiProviderStatus(probe: true);
+      if (mounted) setState(() => providerStatus = p);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          providerStatus = <String, dynamic>{
             'providers': <dynamic>[],
-            'configured': 0,
-            'successful': 0,
-            'total': 6,
             'error': e.toString(),
           };
-          status = 'AI request error • fallback state retained';
         });
       }
     } finally {
@@ -167,6 +164,8 @@ class _ServerAiPageState extends State<ServerAiPage> {
               ),
             ),
           ),
+          if (result['error'] != null)
+            infoCard('SERVER ERROR', result['error'].toString(), Colors.red),
           Card(
             child: ListTile(
               title: Text(
@@ -181,6 +180,8 @@ class _ServerAiPageState extends State<ServerAiPage> {
               trailing: Chip(label: Text('$success/$total')),
             ),
           ),
+          if (providerStatus['error'] != null)
+            infoCard('PROVIDER PROBE ERROR', providerStatus['error'].toString(), Colors.red),
           if (providerStatus.isNotEmpty)
             Card(
               child: Padding(
