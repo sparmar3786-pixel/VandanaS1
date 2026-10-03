@@ -214,6 +214,13 @@ jobs:
         working-directory: backend
         run: python -m unittest discover -s . -p 'test_*.py' -v
 
+      - name: Format Dart source before validation
+        working-directory: flutter_app
+        run: |
+          dart format lib
+          dart format --output=none --set-exit-if-changed lib
+          git diff --check
+
       - name: Validate Dart source
         working-directory: flutter_app
         run: |
