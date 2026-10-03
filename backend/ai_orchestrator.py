@@ -305,6 +305,7 @@ def validate_all(payload):
         "cross_verified":cross_verified,
         "reason":reason,
         "local_fallback":local,
+        "quant_evidence":payload.get("quant_evidence",{}),
         "mode":"six_provider_consensus" if cross_verified else "local_nse_fallback",
         "sources":{"ai_api":"server-side provider API keys","nse_official_site":payload.get("nse_official_site"),"nse_mcp":"https://mcp.nseindia.in/cmmkt/mcp"},
         "cached":False,
