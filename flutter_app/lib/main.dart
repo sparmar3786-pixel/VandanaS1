@@ -965,37 +965,155 @@ class _TerminalState extends State<Terminal> {
     FilledButton.icon(onPressed:fetchCommodities,icon:const Icon(Icons.refresh),label:const Text('REFRESH MCX')),
   ]);
 
-  Widget oiLabPage() => ListView(padding:const EdgeInsets.all(12),children:<Widget>[
-    const Text('OI Lab • Indian Index Options',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)),
-    const SizedBox(height:8),
-    infoCard('Scope','Only Indian index option OI. MCX/futures are excluded.',Colors.blue),
-    Wrap(spacing:6,children:<Widget>[
-      for(final sym in const['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX','BANKEX'])
-        FilterChip(label:Text(sym),selected:selectedOptionSymbol==sym,onSelected:(_){setState(()=>selectedOptionSymbol=sym);fetchOptionRows();})
-    ]),
-    const SizedBox(height:8),
-    if(liveOptionRows.isNotEmpty) _oiSummaryCards(),
-    if(liveOptionRows.isEmpty) infoCard('OI snapshot','Select an index to load its live CE/PE OI snapshot.',Colors.orange),
-  ]);
+  Widget oiLabPage() {
+    num ceOI = 0;
+    num peOI = 0;
+    num ceUp = 0;
+    num peUp = 0;
+    num ceDown = 0;
+    num peDown = 0;
 
-  Widget _oiSummaryCards() {
-    num ceOI=0,peOI=0,ceUp=0,peUp=0,ceDown=0,peDown=0;
-    for(final r in liveOptionRows){
-      final oi=num.tryParse((r['oi']??0).toString())??0;
-      final ch=num.tryParse((r['oiChangePct']??0).toString())??0;
-      if(r['type']=='CE'){ceOI+=oi;if(ch>0)ceUp++;if(ch<0)ceDown++;}
-      if(r['type']=='PE'){peOI+=oi;if(ch>0)peUp++;if(ch<0)peDown++;}
+    for (final raw in liveOptionRows) {
+      if (raw is! Map) continue;
+      final r = Map<String, dynamic>.from(raw);
+      final oi = num.tryParse((r["oi"] ?? "0").toString()) ?? 0;
+      final ch = num.tryParse((r["oiChangePct"] ?? r["oi_change"] ?? "0").toString()) ?? 0;
+      final side = (r["type"] ?? "").toString().toUpperCase();
+      if (side == "CE") {
+        ceOI += oi;
+        if (ch > 0) ceUp++;
+        if (ch < 0) ceDown++;
+      } else if (side == "PE") {
+        peOI += oi;
+        if (ch > 0) peUp++;
+        if (ch < 0) peDown++;
+      }
     }
-    return Column(children:<Widget>[
-      Row(children:<Widget>[
-        Expanded(child:infoCard('CALL OI',ceOI.toStringAsFixed(0)+' • ↑ '+ceUp.toString()+' ↓ '+ceDown.toString(),Colors.green)),
-        const SizedBox(width:8),
-        Expanded(child:infoCard('PUT OI',peOI.toStringAsFixed(0)+' • ↑ '+peUp.toString()+' ↓ '+peDown.toString(),Colors.red)),
-      ]),
-      infoCard('OI direction','↑ OI = addition • ↓ OI = reduction • selected index: '+selectedOptionSymbol,Colors.blue),
-    ]);
+
+    final pcr = ceOI > 0 ? peOI / ceOI : null;
+
+    return RefreshIndicator(
+      onRefresh: () => refreshCurrentPage(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Expanded(
+                child: Text("OI LAB • LIVE", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              ),
+              IconButton(
+                tooltip: "Refresh OI",
+                onPressed: pageBusy ? null : refreshCurrentPage,
+                icon: const Icon(Icons.refresh),
+              ),
+              IconButton(
+                tooltip: "Clear OI cache",
+                onPressed: pageBusy ? null : () => refreshCurrentPage(clearServerCache: true),
+                icon: const Icon(Icons.delete_sweep),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text("Angel One SmartAPI • live index option OI", style: TextStyle(color: Colors.grey)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              for (final sym in const <String>["NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX","BANKEX"])
+                ChoiceChip(
+                  label: Text(sym),
+                  selected: selectedOptionSymbol == sym,
+                  onSelected: (selected) {
+                    if (!selected) return;
+                    setState(() => selectedOptionSymbol = sym);
+                    refreshCurrentPage(clearServerCache: true);
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(child: infoCard("CALL OI", ceOI.toStringAsFixed(0), Colors.green)),
+              const SizedBox(width: 8),
+              Expanded(child: infoCard("PUT OI", peOI.toStringAsFixed(0), Colors.red)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: infoCard(
+                  "PCR",
+                  pcr == null ? "DATA UNAVAILABLE" : pcr.toStringAsFixed(3),
+                  Colors.purple,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(child: infoCard("CE ↑ / ↓", ceUp.toString() + " / " + ceDown.toString(), Colors.green)),
+              const SizedBox(width: 8),
+              Expanded(child: infoCard("PE ↑ / ↓", peUp.toString() + " / " + peDown.toString(), Colors.red)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text("TOP OI WALLS", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ..._topOiRows(),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          infoCard("CACHE", cacheStatus, Colors.blue),
+          FilledButton.icon(
+            onPressed: pageBusy ? null : () => refreshCurrentPage(clearServerCache: true),
+            icon: const Icon(Icons.delete_sweep),
+            label: const Text("CLEAR CACHE + REFRESH OI"),
+          ),
+        ],
+      ),
+    );
   }
 
+  List<Widget> _topOiRows() {
+    final rows = liveOptionRows
+        .whereType<Map>()
+        .map((x) => Map<String, dynamic>.from(x))
+        .toList()
+      ..sort(
+        (a, b) => (double.tryParse((b["oi"] ?? "0").toString()) ?? 0)
+            .compareTo(double.tryParse((a["oi"] ?? "0").toString()) ?? 0),
+      );
+
+    return rows.take(10).map((r) {
+      final side = (r["type"] ?? "").toString().toUpperCase();
+      final color = side == "CE" ? Colors.green : Colors.red;
+      return ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: CircleAvatar(
+          radius: 15,
+          child: Text(side == "CE" ? "C" : "P"),
+        ),
+        title: Text((r["strike"] ?? "-").toString() + " • " + (r["symbol"] ?? "-").toString()),
+        subtitle: Text(
+          "LTP " + (r["ltp"] ?? "-").toString() +
+              " • OI " + (r["oi"] ?? "-").toString() +
+              " • OI Δ " + (r["oiChangePct"] ?? r["oi_change"] ?? "-").toString(),
+        ),
+        trailing: Text(side, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+      );
+    }).toList();
+  }
   Widget watchlistPage() => ListView(padding:const EdgeInsets.all(12),children:<Widget>[
     const Text('Watchlist • All Indian Indices',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)), const SizedBox(height:8),
     ...liveIndices.map((q)=>Card(child:ListTile(leading:const Icon(Icons.star_border),title:Text((q['name']??q['symbol']??'-').toString()),subtitle:Text((q['exchange']??'').toString()),trailing:Column(mainAxisAlignment:MainAxisAlignment.center,crossAxisAlignment:CrossAxisAlignment.end,children:<Widget>[Text((q['ltp']??'-').toString(),style:const TextStyle(fontWeight:FontWeight.bold)),Text((q['percentChange']??q['netChange']??'-').toString())])))),
