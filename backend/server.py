@@ -362,16 +362,19 @@ def ai_context(index:str="NIFTY",x_token:str=Header(None)):
     else:
         data_layer={"available":False,"reason":"Angel One is not connected. Connect from Angel API screen first.","source":"Angel One SmartAPI -> AI Read data layer"}
     market=terminal.get("market") or {}
-    return {"terminal":terminal,"strategy":strategy,"data_layer":data_layer,"three_sources":{
+    quant_payload={"terminal":terminal,"strategy":strategy,"data_layer":data_layer,"three_sources":{
         "angel_api":{"connected":bool((terminal.get("angel_api") or {}).get("connected")),"data":terminal.get("data"),"option_chain":terminal.get("option_chain")},
         "nse_mcp":mcp,
         "nse_internet":{"connected":official.get("connected",False),"evidence":official}
-    },"market_evidence":{
+    }}
+    quant_payload["market_evidence"]={
         "index":index.upper(),"spot":market.get("spot"),"atm":market.get("atm"),
         "pcr":strategy.get("pcr"),"top_ce_oi":strategy.get("highest_ce_oi",[]),"top_pe_oi":strategy.get("highest_pe_oi",[]),
         "trend":strategy.get("trend"),"support":strategy.get("support"),"resistance":strategy.get("resistance"),
         "max_pain":strategy.get("max_pain")
     },"ai_rule":"Reconcile Angel API + official NSE MCP + Internet evidence. Missing or conflicting evidence forces WAIT."}
+    quant_payload["quant_evidence"]=build_quant_evidence(quant_payload)
+    return quant_payload
 @app.get("/v1/ai/provider-status")
 def ai_provider_status(x_token:str=Header(None),probe:bool=False):
     """Safe AI provider status. probe=true performs real minimal API calls; secrets are never returned."""
