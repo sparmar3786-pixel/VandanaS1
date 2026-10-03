@@ -204,6 +204,9 @@ class LiveDataService {
   }) =>
       _get(path, query: query, timeout: timeout);
 
+  Future<Map<String, dynamic>> health() =>
+      getJson('/health', timeout: const Duration(seconds: 8));
+
   Future<Map<String, dynamic>> liveSnapshot() =>
       getJson('/v1/live/snapshot');
 
