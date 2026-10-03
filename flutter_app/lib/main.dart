@@ -37,7 +37,7 @@ class _TerminalState extends State<Terminal> {
   // 30 Screen Layout reference. No order-placement UI is added.
   static const screens = <String>[
     'Dashboard','Market','Commodity','Signals','OI Lab','Watchlist','Charts',
-    'Option Chain','News','Market Details','Angel API','NSE','NSE MCP','Data',
+    'Option Chain','News','Market Details','Angel API','NSE','NSE MCP','Strategy 377',
     'Strategies','AI Models','Settings','More',
     'Splash / Launch','Login / Authentication','Market Overview','OI Heatmap',
     'Premium / Volume','Greeks / IV Surface','Signal Flow','Market Regime',
@@ -317,10 +317,10 @@ class _TerminalState extends State<Terminal> {
           await fetchCommodities();
           break;
         case 3:
-          await Future.wait<void>[fetchTerminal(), refreshStrategy()];
+          await Future.wait<void>([fetchTerminal(), refreshStrategy()];
           break;
         case 4:
-          await Future.wait<void>[fetchOptionRows(), fetchOIBuild()];
+          await Future.wait<void>([fetchOptionRows(), fetchOIBuild()];
           break;
         case 6:
           await fetchCandles();
@@ -347,7 +347,7 @@ class _TerminalState extends State<Terminal> {
         case 24:
         case 25:
         case 26:
-          await Future.wait<void>[fetchTerminal(), fetchOptionRows()];
+          await Future.wait<void>([fetchTerminal(), fetchOptionRows()];
           break;
         case 27:
           await fetchStrategy377();
@@ -359,7 +359,7 @@ class _TerminalState extends State<Terminal> {
           await fetchAiProviderStatus(probe: true);
           break;
         default:
-          await Future.wait<void>[
+          await Future.wait<void>([
             fetchLiveSnapshot(),
             fetchIndices(),
           ];
@@ -1600,6 +1600,39 @@ class _TerminalState extends State<Terminal> {
       ),
     );
   }
+  Future<void> fetchStrategy377() async {
+    try {
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.strategy377();
+      if (mounted) setState(() => strategy377Data = d);
+    } catch (_) {
+      if (mounted) {
+        setState(() => strategy377Data = <String, dynamic>{
+          "error": "Strategy 377 live payload unavailable."
+        });
+      }
+    }
+  }
+
+  Future<void> fetchQuant() async {
+    try {
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.quantLive(index: selectedOptionSymbol);
+      if (mounted) setState(() => quantData = d);
+    } catch (_) {}
+  }
+
+  Future<void> fetchAiProviderStatus({bool probe = false}) async {
+    try {
+      final service = liveDataService;
+      if (service == null) return;
+      final d = await service.aiProviderStatus(probe: probe);
+      if (mounted) setState(() => aiStatusData = d);
+    } catch (_) {}
+  }
+
   Future<void> fetchStrategy() async {
     if (strategyBusy) return;
     strategyBusy = true;
