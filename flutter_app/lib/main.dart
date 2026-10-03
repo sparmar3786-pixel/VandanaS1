@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_saver/file_saver.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'signal_alerts.dart';
 import 'puter_ai_page.dart';
+import 'live_data_service.dart';
 
 const String railwayBackendUrl =
-    String.fromEnvironment('RAILWAY_BACKEND_URL', defaultValue: '');
+    String.fromEnvironment('RAILWAY_BACKEND_URL', defaultValue: 'https://nse-algo-backend-production.up.railway.app');
 const String defaultBackendUrl = railwayBackendUrl;
 
 void main() => runApp(const AlgoApp());
@@ -84,6 +86,10 @@ class _TerminalState extends State<Terminal> {
   SignalAlert? latestAlert;
   late final WebViewController proChartController;
   bool proChartReady = false;
+  LiveDataService? liveDataService;
+  WebSocketChannel? liveChannel;
+  StreamSubscription<dynamic>? liveSubscription;
+  Timer? liveHttpTimer;
 
   @override void initState() {
     super.initState();
@@ -97,6 +103,7 @@ class _TerminalState extends State<Terminal> {
         },
       ));
     proChartController.loadFlutterAsset('assets/prochart.html');
+    startLiveConnection();
     fetchTerminal();
     fetchIndices();
     fetchCommodities();
@@ -112,7 +119,69 @@ class _TerminalState extends State<Terminal> {
     timer = Timer.periodic(const Duration(seconds: 5), (_) { fetchTerminal(); if (selected == 6) fetchCandles(); if (selected == 14) fetchStrategy(); });
     marketTimer = Timer.periodic(const Duration(seconds: 10), (_) { fetchIndices(); fetchCommodities(); });
   }
-  @override void dispose() { timer?.cancel(); marketTimer?.cancel(); alertService?.stop(); super.dispose(); }
+  @override void dispose() {
+    timer?.cancel();
+    marketTimer?.cancel();
+    liveHttpTimer?.cancel();
+    liveSubscription?.cancel();
+    liveChannel?.sink.close();
+    alertService?.stop();
+    super.dispose();
+  }
+
+  void startLiveConnection() {
+    liveDataService = LiveDataService(backendUrl, apiToken);
+    liveHttpTimer?.cancel();
+    liveHttpTimer = Timer.periodic(const Duration(seconds: 10), (_) => fetchLiveSnapshot());
+    _connectLiveSocket();
+  }
+
+  void _connectLiveSocket() {
+    try {
+      liveChannel?.sink.close();
+      final service = liveDataService;
+      if (service == null || backendUrl.isEmpty) return;
+      final channel = service.connectSocket();
+      liveChannel = channel;
+      liveSubscription?.cancel();
+      liveSubscription = channel.stream.listen(
+        (raw) {
+          try {
+            final d = raw is String ? jsonDecode(raw) : raw;
+            if (d is Map<String, dynamic>) applyLiveSnapshot(d);
+          } catch (_) {}
+        },
+        onError: (_) {},
+        onDone: () {},
+        cancelOnError: false,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> fetchLiveSnapshot() async {
+    try {
+      final service = liveDataService;
+      if (service == null || backendUrl.isEmpty) return;
+      final d = await service.liveSnapshot();
+      applyLiveSnapshot(d);
+    } catch (_) {}
+  }
+
+  void applyLiveSnapshot(Map<String, dynamic> d) {
+    if (!mounted) return;
+    final conn = d['connection'];
+    final angel = conn is Map && conn['angel'] == true;
+    final server = conn is Map && conn['server'] == true;
+    setState(() {
+      terminalData = d;
+      final s = d['signals'];
+      signal = s is Map<String, dynamic> ? s : signal;
+      connection = server && angel ? 'Connected' : server ? 'Backend connected / Angel not connected' : 'Backend not connected';
+      final m = d['nse_mcp'];
+      nseMcpStatus = m is Map && m['connected'] == true ? 'Connected' : 'Not connected';
+    });
+  }
+
 
   Future<void> fetchTerminal() async {
     try {
@@ -1076,10 +1145,12 @@ class _TerminalState extends State<Terminal> {
               setState(() {
                 backendUrl = cleanUrl(u.text);
                 apiToken = k.text.trim();
+                liveDataService = LiveDataService(backendUrl, apiToken);
               });
               alertService?.baseUrl = backendUrl;
               alertService?.apiToken = apiToken;
               Navigator.pop(d);
+              startLiveConnection();
               fetchTerminal();
             },
             child: const Text('Save'),
