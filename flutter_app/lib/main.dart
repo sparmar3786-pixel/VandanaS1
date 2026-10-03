@@ -348,7 +348,11 @@ class _TerminalState extends State<Terminal> {
           ]);
           break;
         case 4:
-          await Future.wait<void>([fetchOptionRows(), fetchOIBuild()]);
+          await Future.wait<void>([
+            fetchOptionRows(),
+            fetchOIBuild(),
+            _refreshMcpCore(),
+          ]);
           break;
         case 6:
           await fetchCandles();
@@ -1020,20 +1024,22 @@ class _TerminalState extends State<Terminal> {
       return;
     }
     try {
-      try {
-        final mcp = await service.mcpOptionChain(
-          symbol: selectedOptionSymbol,
-          expiry: optionExpiry?.toString(),
-        );
-        if (mounted) {
-          setState(() {
-            mcpContextData = <String,dynamic>{
-              ...mcpContextData,
-              'option_chain': mcp,
-            };
-          });
-        }
-      } catch (_) {}
+      final mcpFuture = service
+          .mcpOptionChain(
+            symbol: selectedOptionSymbol,
+            expiry: optionExpiry?.toString(),
+          )
+          .then<void>((mcp) {
+            if (!mounted) return;
+            setState(() {
+              mcpContextData = <String, dynamic>{
+                ...mcpContextData,
+                'option_chain': mcp,
+              };
+            });
+          })
+          .catchError((Object _) {});
+
       final d = await service.optionChain(
         symbol: selectedOptionSymbol,
         count: optionStrikeCount,
@@ -1041,7 +1047,8 @@ class _TerminalState extends State<Terminal> {
       final rows = d['rows'];
       if (mounted) {
         setState(() {
-          liveOptionRows = rows is List ? List<dynamic>.from(rows) : <dynamic>[];
+          liveOptionRows =
+              rows is List ? List<dynamic>.from(rows) : <dynamic>[];
           optionSpot = d['spot'];
           optionExpiry = d['expiry'];
           optionDataError = liveOptionRows.isEmpty
@@ -1054,6 +1061,7 @@ class _TerminalState extends State<Terminal> {
               : 'Live Angel One snapshot';
         });
       }
+      await mcpFuture;
     } catch (e) {
       if (mounted) setState(() => optionDataError = e.toString());
     } finally {
@@ -1861,6 +1869,15 @@ class _TerminalState extends State<Terminal> {
       ),
     );
   }
+  Future<void> _refreshMcpCore() async {
+    final service = liveDataService;
+    if (service == null) return;
+    try {
+      final d = await service.mcpMarketCore(symbol: selectedOptionSymbol);
+      if (mounted) setState(() => mcpCoreData = d);
+    } catch (_) {}
+  }
+
   Future<void> fetchStrategy377() async {
     try {
       final service = liveDataService;
