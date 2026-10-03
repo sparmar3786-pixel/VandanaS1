@@ -79,6 +79,11 @@ class _TerminalState extends State<Terminal> {
   String selectedChartExchange = 'NSE';
   String selectedInterval = 'FIVE_MINUTE';
   bool angelDataBusy = false;
+  bool optionBusy = false;
+  bool oiBusy = false;
+  Map<String, dynamic> strategy377Data = <String, dynamic>{};
+  Map<String, dynamic> quantData = <String, dynamic>{};
+  Map<String, dynamic> aiStatusData = <String, dynamic>{};
   Map<String,dynamic>? terminalData;
   Timer? timer;
   Timer? marketTimer;
@@ -299,7 +304,11 @@ class _TerminalState extends State<Terminal> {
 
       switch (selected) {
         case 0:
-          await Future.wait<void>(<Future<void>>[fetchTerminal(), fetchIndices()]);
+          await Future.wait<void>(<Future<void>>[
+            fetchTerminal(),
+            fetchIndices(),
+            fetchOptionRows(),
+          ]);
           break;
         case 1:
           await fetchIndices();
@@ -308,10 +317,10 @@ class _TerminalState extends State<Terminal> {
           await fetchCommodities();
           break;
         case 3:
-          await Future.wait<void>(<Future<void>>[fetchTerminal(), refreshStrategy()]);
+          await Future.wait<void>[fetchTerminal(), refreshStrategy()];
           break;
         case 4:
-          await Future.wait<void>(<Future<void>>[fetchOptionRows(), fetchOIBuild()]);
+          await Future.wait<void>[fetchOptionRows(), fetchOIBuild()];
           break;
         case 6:
           await fetchCandles();
@@ -325,14 +334,35 @@ class _TerminalState extends State<Terminal> {
         case 9:
           await fetchAngelMarket();
           break;
+        case 13:
+          await fetchStrategy377();
+          break;
         case 14:
           await fetchStrategy();
           break;
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+        case 24:
+        case 25:
+        case 26:
+          await Future.wait<void>[fetchTerminal(), fetchOptionRows()];
+          break;
+        case 27:
+          await fetchStrategy377();
+          break;
+        case 28:
+          await fetchStrategy377();
+          break;
+        case 29:
+          await fetchAiProviderStatus(probe: true);
+          break;
         default:
-          await Future.wait<void>(<Future<void>>[
+          await Future.wait<void>[
             fetchLiveSnapshot(),
             fetchIndices(),
-          ]);
+          ];
       }
 
       if (mounted) {
@@ -519,8 +549,10 @@ class _TerminalState extends State<Terminal> {
     else if (selected == 9) screen = marketDetailsPage();
     else if (selected == 10) screen = angelApi();
     else if (selected == 12) screen = nseMcp();
+    else if (selected == 13) screen = strategy377Page();
     else if (selected == 14) screen = strategiesPage();
     else if (selected == 15) screen = aiModelsPage();
+    else if (selected >= 20 && selected <= 29) screen = liveReferencePage(selected);
     else if (selected == 16) screen = settingsPage();
     else if (selected == 17) screen = morePage();
     else if (selected >= 18) screen = referenceLayoutScreen(selected);
@@ -884,8 +916,9 @@ class _TerminalState extends State<Terminal> {
   }
 
   Future<void> fetchOptionRows() async {
-    if (angelDataBusy) return;
-    setState(() => angelDataBusy = true);
+    if (optionBusy) return;
+    optionBusy = true;
+    if (mounted) setState(() => angelDataBusy = true);
     try {
       final service = liveDataService;
       if (service == null) return;
@@ -909,13 +942,15 @@ class _TerminalState extends State<Terminal> {
     } catch (_) {
       // Keep previous live snapshot on transient backend failures.
     } finally {
+      optionBusy = false;
       if (mounted) setState(() => angelDataBusy = false);
     }
   }
 
   Future<void> fetchOIBuild() async {
-    if (angelDataBusy) return;
-    setState(() => angelDataBusy = true);
+    if (oiBusy) return;
+    oiBusy = true;
+    if (mounted) setState(() => angelDataBusy = true);
     try {
       final service = liveDataService;
       if (service == null) return;
@@ -927,6 +962,7 @@ class _TerminalState extends State<Terminal> {
     } catch (_) {
       // Preserve the last good OI snapshot.
     } finally {
+      oiBusy = false;
       if (mounted) setState(() => angelDataBusy = false);
     }
   }
