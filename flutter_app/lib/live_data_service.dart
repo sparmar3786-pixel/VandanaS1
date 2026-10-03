@@ -197,6 +197,17 @@ class LiveDataService {
   Future<Map<String, dynamic>> terminal() =>
       getJson('/v1/terminal');
 
+  Future<Map<String, dynamic>> strategyRefresh({
+    String? index,
+  }) =>
+      getJson(
+        '/v1/strategy/refresh',
+        query: index == null
+            ? null
+            : <String, String>{'index': index},
+        timeout: const Duration(seconds: 12),
+      );
+
   Future<Map<String, dynamic>> angelIndices() =>
       getJson('/v1/angel/indices', timeout: const Duration(seconds: 8));
 
