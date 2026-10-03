@@ -56,6 +56,7 @@ class _TerminalState extends State<Terminal> {
   String backendUrl = defaultBackendUrl;
   String apiToken = '';
   String connection = 'Connecting...';
+  String backendConnectionError = '';
   bool darkMode = true;
   List<dynamic> liveIndices = <dynamic>[];
   List<dynamic> liveCommodities = <dynamic>[];
@@ -173,12 +174,14 @@ class _TerminalState extends State<Terminal> {
 
   void startLiveConnection() {
     liveDataService?.close();
+    backendConnectionError = '';
     liveDataService = LiveDataService(backendUrl, apiToken);
     liveHttpTimer?.cancel();
     liveHttpTimer = Timer.periodic(const Duration(seconds: 10), (_) => fetchLiveSnapshot());
     liveNewsTimer?.cancel();
     liveNewsTimer = Timer.periodic(const Duration(seconds: 60), (_) => fetchNews());
     _connectLiveSocket();
+    probeBackendConnection();
   }
 
   void _connectLiveSocket() {
@@ -203,13 +206,40 @@ class _TerminalState extends State<Terminal> {
     } catch (_) {}
   }
 
+  Future<void> probeBackendConnection() async {
+    try {
+      final service = liveDataService;
+      if (service == null || backendUrl.isEmpty) return;
+      final d = await service.health();
+      if (!mounted) return;
+      final angel = d['angel_connected'] == true;
+      setState(() {
+        backendConnectionError = '';
+        connection = angel ? 'Connected' : 'Backend connected / Angel not connected';
+        angelLoginStatus = (d['angel_message'] ?? '').toString();
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        backendConnectionError = error.toString();
+        connection = 'Backend not connected';
+      });
+    }
+  }
+
   Future<void> fetchLiveSnapshot() async {
     try {
       final service = liveDataService;
       if (service == null || backendUrl.isEmpty) return;
       final d = await service.liveSnapshot();
       applyLiveSnapshot(d);
-    } catch (_) {}
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        backendConnectionError = error.toString();
+        connection = 'Backend not connected';
+      });
+    }
   }
 
   void applyLiveSnapshot(Map<String, dynamic> d) {
@@ -2077,6 +2107,8 @@ class _TerminalState extends State<Terminal> {
     const SizedBox(height: 12),
     infoCard('Backend provider',backendProvider(),backendProvider() == 'Railway' ? Colors.green : Colors.blue),
     infoCard('Backend URL',backendUrl,Colors.blue),
+    infoCard('Backend diagnostic',backendConnectionError.isEmpty ? 'Reachability OK' : backendConnectionError, backendConnectionError.isEmpty ? Colors.green : Colors.red),
+    FilledButton.icon(onPressed: probeBackendConnection, icon: const Icon(Icons.network_check), label: const Text('Test backend now')),
     infoCard('MCP servers','Market MCP + Strategy Evidence MCP + official NSE MCP client',Colors.blue),
     infoCard('Mode','Paper signals only',Colors.orange),
     infoCard('Timeframes','1m 2m 3m 5m 10m 15m 30m 1h 2h 4h 1D',Colors.blue),
