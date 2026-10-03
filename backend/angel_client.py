@@ -365,7 +365,7 @@ class AngelClient:
         cache_key=f"{requested}:{int(count)}"
         cached=self.last_chain_cache.get(cache_key)
         cached_at=self.last_chain_cache_ts.get(cache_key,0)
-        if cached and time.time()-cached_at < 4:
+        if cached and time.time()-cached_at < 8:
             return {**cached,"cached":True,"cache_age_sec":round(time.time()-cached_at,1)}
         try:
             if not self.chain or self.chain_symbol!=requested:
