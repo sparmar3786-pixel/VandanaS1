@@ -210,6 +210,40 @@ class LiveDataService {
   Future<Map<String, dynamic>> diagnostics() =>
       getJson('/v1/diagnostics');
 
+  Future<Map<String, dynamic>> mcpContext({
+    String index = 'NIFTY',
+  }) =>
+      getJson(
+        '/v1/mcp/context',
+        query: <String, String>{'symbol': index},
+        timeout: const Duration(seconds: 15),
+      );
+
+  Future<Map<String, dynamic>> mcpOptionChain({
+    String symbol = 'NIFTY',
+    String? expiry,
+  }) =>
+      getJson(
+        '/v1/mcp/option-chain',
+        query: <String, String>{
+          'symbol': symbol,
+          if (expiry != null && expiry.isNotEmpty) 'expiry': expiry,
+        },
+        timeout: const Duration(seconds: 15),
+      );
+
+  Future<Map<String, dynamic>> mcpMarketCore({
+    String symbol = 'NIFTY',
+  }) =>
+      getJson(
+        '/v1/mcp/market-core',
+        query: <String, String>{'symbol': symbol},
+        timeout: const Duration(seconds: 8),
+      );
+
+  Future<Map<String, dynamic>> mcpCommodities() =>
+      getJson('/v1/mcp/commodities', timeout: const Duration(seconds: 8));
+
   Future<Map<String, dynamic>> quantLive({
     String index = 'NIFTY',
   }) =>
