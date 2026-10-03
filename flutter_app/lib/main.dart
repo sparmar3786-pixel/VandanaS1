@@ -1321,11 +1321,13 @@ class _TerminalState extends State<Terminal> {
             DataColumn(label: Text("CE OI")),
             DataColumn(label: Text("CE IV")),
             DataColumn(label: Text("CE Δ")),
+            DataColumn(label: Text("CE Γ")),
             DataColumn(label: Text("STRIKE")),
             DataColumn(label: Text("PE LTP")),
             DataColumn(label: Text("PE OI")),
             DataColumn(label: Text("PE IV")),
             DataColumn(label: Text("PE Δ")),
+            DataColumn(label: Text("PE Γ")),
           ],
           rows: strikes.map((strike) {
             final bucket = byStrike[strike]!;
@@ -1342,14 +1344,8 @@ class _TerminalState extends State<Terminal> {
                 numberCell(ce, "ltp", color: Colors.green),
                 numberCell(ce, "oi"),
                 numberCell(ce, "iv"),
-                DataCell(Text(
-                  change(ce),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: ceCh != null && ceCh < 0 ? Colors.red : Colors.green,
-                    fontWeight: FontWeight.w600,
-                  ),
-                )),
+                numberCell(ce, "delta", color: Colors.green),
+                numberCell(ce, "gamma", color: Colors.green),
                 DataCell(
                   Text(
                     isAtm ? "ATM " + strike.toStringAsFixed(0) : strike.toStringAsFixed(0),
@@ -1362,14 +1358,8 @@ class _TerminalState extends State<Terminal> {
                 numberCell(pe, "ltp", color: Colors.red),
                 numberCell(pe, "oi"),
                 numberCell(pe, "iv"),
-                DataCell(Text(
-                  change(pe),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: peCh != null && peCh < 0 ? Colors.red : Colors.green,
-                    fontWeight: FontWeight.w600,
-                  ),
-                )),
+                numberCell(pe, "delta", color: Colors.red),
+                numberCell(pe, "gamma", color: Colors.red),
               ],
             );
           }).toList(),
