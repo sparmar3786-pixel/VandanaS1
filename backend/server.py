@@ -393,6 +393,37 @@ def ai_validate(body:AIValidationRequest,x_token:str=Header(None)):
                 "configured":0,"successful":0,"parsed_states":0,"total":6,"providers":[],
                 "local_fallback":{"status":"error_local","text":str(e)[:300]}}
 
+@app.get("/v1/live/snapshot")
+def live_snapshot(x_token:str=Header(None)):
+    auth(x_token)
+    snap=terminal_snapshot()
+    snap["live_transport"]="http"
+    snap["server_time"]=time.time()
+    return snap
+
+@app.websocket("/ws/live")
+async def live_websocket(websocket:WebSocket):
+    token=websocket.query_params.get("token")
+    try:
+        if os.getenv("API_TOKEN"):
+            if token != C.API_TOKEN:
+                await websocket.close(code=1008)
+                return
+        await websocket.accept()
+        while True:
+            snap=terminal_snapshot()
+            snap["live_transport"]="websocket"
+            snap["server_time"]=time.time()
+            await websocket.send_json(snap)
+            await asyncio.sleep(max(2, min(int(C.POLL_SEC), 10)))
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+
 @app.get("/v1/diagnostics")
 def diagnostics(x_token:str=Header(None)):
     auth(x_token); providers=ai_status(x_token)["providers"]; ev=getattr(eng,"strategy_evidence",[]) if hasattr(eng,"strategy_evidence") else []
