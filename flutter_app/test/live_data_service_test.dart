@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import '../lib/live_data_service.dart';
+import 'package:parmar_trading/live_data_service.dart';
 
 void main() {
   test('retries a transient backend failure and returns JSON', () async {
