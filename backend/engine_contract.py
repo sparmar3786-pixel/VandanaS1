@@ -19,6 +19,10 @@ def _fresh_snapshot(client, symbol):
         return None
     try:
         if str(symbol).upper() == str(getattr(client, "chain_symbol", symbol)).upper():
+            cached = getattr(client, "last_snapshot", None)
+            cached_ts = float(cached.get("ts", 0)) if isinstance(cached, dict) else 0.0
+            if isinstance(cached, dict) and cached_ts > 0 and time.time() - cached_ts <= 8:
+                return cached
             return client.snapshot()
         rows = client.option_chain_rows(symbol=symbol, count=15)
         opts = {}
