@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from backend.strategy_377 import STRATEGY_377, evaluate_live
-from backend.strategy_engine import _clock, validate_strategy
+from strategy_377 import STRATEGY_377, evaluate_live
+from strategy_engine import _clock, validate_strategy
 
 
 def test_strategy_377_schema():
