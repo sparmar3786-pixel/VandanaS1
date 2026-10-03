@@ -3,6 +3,8 @@ import csv
 import io
 import json
 import requests
+import threading
+import time
 
 NSE_MCP_URL = "https://mcp.nseindia.in/cmmkt/mcp"
 
@@ -11,6 +13,11 @@ class NSEMCP:
         self.url = url
         self.timeout = 12
         self.protocol_versions = ['2025-06-18', '2025-03-26', '2024-11-05']
+        self.session = requests.Session()
+        self._sid = None
+        self._version = None
+        self._session_at = 0.0
+        self._lock = threading.RLock()
 
     def _post(self, payload, session_id=None, protocol_version=None):
         headers = {
@@ -24,7 +31,7 @@ class NSEMCP:
             headers["Mcp-Session-Id"] = session_id
         if protocol_version:
             headers["MCP-Protocol-Version"] = protocol_version
-        r = requests.post(self.url, json=payload, headers=headers, timeout=self.timeout)
+        r = self.session.post(self.url, json=payload, headers=headers, timeout=self.timeout)
         r.raise_for_status()
         sid = r.headers.get("mcp-session-id") or session_id
         text = r.text.strip()
@@ -46,23 +53,28 @@ class NSEMCP:
         return {}, sid
 
     def _session(self):
-        last=None
-        for version in self.protocol_versions:
-            try:
-                init, sid = self._post({
-                    "jsonrpc":"2.0","id":1,"method":"initialize",
-                    "params":{
-                        "protocolVersion":version,
-                        "capabilities":{},
-                        "clientInfo":{"name":"NSE Algo Signal","version":"1.0"}
-                    }
-                }, protocol_version=version)
-                negotiated=((init.get("result") or {}).get("protocolVersion") or version)
-                self._post({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}, sid, negotiated)
-                return sid, negotiated
-            except Exception as e:
-                last=e
-        raise RuntimeError("NSE MCP initialize failed: " + str(last))
+        with self._lock:
+            if self._sid and self._version and time.time() - self._session_at < 240:
+                return self._sid, self._version
+            last = None
+            for version in self.protocol_versions:
+                try:
+                    init, sid = self._post({
+                        "jsonrpc":"2.0","id":1,"method":"initialize",
+                        "params":{
+                            "protocolVersion":version,
+                            "capabilities":{},
+                            "clientInfo":{"name":"NSE Algo Signal","version":"1.1"}
+                        }
+                    }, protocol_version=version)
+                    negotiated=((init.get("result") or {}).get("protocolVersion") or version)
+                    self._post({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}, sid, negotiated)
+                    self._sid, self._version, self._session_at = sid, negotiated, time.time()
+                    return sid, negotiated
+                except Exception as e:
+                    last = e
+                    self._sid, self._version = None, None
+            raise RuntimeError("NSE MCP initialize failed: " + str(last))
 
     def tools(self):
         sid, version = self._session()
@@ -98,46 +110,65 @@ class NSEMCP:
         return args
 
     def context(self, symbol="NIFTY"):
-        tools = self.tools()
-        data = []
-        errors = []
-        keywords = ("live", "index", "quote", "price", "breadth", "gainer", "loser", "fresh")
-        candidates = [t for t in tools if any(k in str(t.get("name","")).lower() for k in keywords)]
-        for tool in candidates[:4]:
+        sid, version = self._session()
+        listed, _ = self._post({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}, sid, version)
+        tools = listed.get("result", {}).get("tools", [])
+        if not tools:
+            raise RuntimeError("NSE MCP connected but returned no tools.")
+        data, errors = [], []
+        candidates = [t for t in tools if any(k in str(t.get("name","")).lower()
+                                             for k in ("live","index","quote","price","breadth","gainer","loser","fresh","market"))]
+        for tool in candidates[:8]:
             args = self._tool_arguments(tool, symbol.upper())
             if args is None:
                 continue
             try:
-                result = self.call_tool(tool.get("name"), args)
+                result, _ = self._post({
+                    "jsonrpc":"2.0","id":int(time.time()*1000)%1000000000,
+                    "method":"tools/call",
+                    "params":{"name":tool.get("name"),"arguments":args}
+                }, sid, version)
                 data.append({"tool":tool.get("name"),"arguments":args,"result":result})
             except Exception as e:
-                errors.append({"tool":tool.get("name"),"error":str(e)[:300]})
+                errors.append({"tool":tool.get("name"),"error":str(e)[:400]})
         return {
-            "connected": True,
-            "endpoint": self.url,
-            "tool_count": len(tools),
-            "tools": [{"name":t.get("name"),"description":t.get("description")} for t in tools],
-            "data": data,
-            "tool_errors": errors,
-            "option_chain_tool_available": any("option" in str(t.get("name","")).lower() and "chain" in str(t.get("name","")).lower() for t in tools),
+            "connected":True,
+            "endpoint":self.url,
+            "protocol_version":version,
+            "tool_count":len(tools),
+            "tools":[{"name":t.get("name"),"description":t.get("description")} for t in tools],
+            "data":data,
+            "tool_errors":errors,
+            "option_chain_tool_available":any(
+                "option" in str(t.get("name","")).lower() and "chain" in str(t.get("name","")).lower() for t in tools
+            ),
+            "checked_at":time.time(),
         }
+
     def option_chain(self, symbol="NIFTY", expiry=None):
-        tools = self.tools()
-        candidates = [t for t in tools if "option" in t.get("name","").lower() and "chain" in t.get("name","").lower()]
+        sid, version = self._session()
+        listed, _ = self._post({"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}, sid, version)
+        tools = listed.get("result", {}).get("tools", [])
+        candidates = [t for t in tools if "option" in str(t.get("name","")).lower() and "chain" in str(t.get("name","")).lower()]
         if not candidates:
-            raise RuntimeError("Official NSE CM-MCP does not expose an option-chain tool in its current tool list.")
+            raise RuntimeError("Official NSE CM-MCP does not expose an option-chain tool.")
         tool = candidates[0]
-        props = tool.get("inputSchema", {}).get("properties", {})
+        props = tool.get("inputSchema",{}).get("properties",{})
         args = {}
         if "symbol" in props: args["symbol"] = symbol
         elif "index" in props: args["index"] = symbol
-        if expiry and "expiry" in props: args["expiry"] = expiry
-        sid, version = self._session()
+        elif "underlying" in props: args["underlying"] = symbol
+        if expiry:
+            for key in ("expiry","expiryDate","expirydate"):
+                if key in props:
+                    args[key] = expiry
+                    break
         result, _ = self._post({
             "jsonrpc":"2.0","id":4,"method":"tools/call",
             "params":{"name":tool["name"],"arguments":args}
         }, sid, version)
         return tool["name"], result
+
 
 def flatten(obj, prefix=""):
     rows=[]
