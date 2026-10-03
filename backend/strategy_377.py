@@ -53,7 +53,7 @@ def build_live_state(strategy_state: dict) -> dict:
     rows = list(state.get("highest_ce_oi") or []) + list(state.get("highest_pe_oi") or [])
     changing = state.get("what_is_changing") if isinstance(state.get("what_is_changing"), list) else []
     now = time.time()
-    ts = _num(state.get("timestamp") or current.get("timestamp"))
+    ts = _num(current.get("timestamp") or state.get("timestamp"))
     fresh = ts is not None and abs(now - ts) <= 45
     max_volume = max(
         (_num(r.get("volume")) or 0 for r in rows if isinstance(r, dict)),
