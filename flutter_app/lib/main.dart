@@ -1089,60 +1089,169 @@ class _TerminalState extends State<Terminal> {
     } catch (_) {}
   }
   Widget signals() {
-    final action = (signal?['action']?.toString() ?? 'WAIT').replaceAll('_',' ');
-    final underlying = (signal?['underlying'] ?? signal?['index'] ?? signal?['indexName'] ?? signal?['symbol'] ?? selectedOptionSymbol).toString();
-    final optionSymbol = (signal?['optionSymbol'] ?? signal?['tradingSymbol'] ?? signal?['tradingsymbol'] ?? signal?['symbol'] ?? '-').toString();
-    final ltp = signal?['ltp'] ?? signal?['optionLtp'] ?? signal?['option_ltp'] ?? '-';
-    final strike = signal?['strike'] ?? '-';
-    final entry = signal?['entry'] ?? '-';
-    final sl = signal?['sl'] ?? signal?['stopLoss'] ?? signal?['stop_loss'] ?? '-';
-    final target = signal?['target'] ?? '-';
-    final spot = signal?['spot'] ?? '-';
-    final raw = signal?['reasons'];
-    final reasons = raw is List ? raw.map((e) => e.toString()).join('\n') : (raw?.toString() ?? 'No qualifying live evidence yet.');
-    final wait = action == 'WAIT' || action == 'NO QUALIFYING TRADE';
-    return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-      const Text('Signals', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 8),
-      Text('Angel One live engine • clear instrument fields • paper only', style: TextStyle(color: Colors.grey.shade700)),
-      const SizedBox(height: 12),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            Row(children: <Widget>[
-              Icon(wait ? Icons.pause_circle_outline : Icons.bolt, color: wait ? Colors.orange : Colors.green, size: 30),
-              const SizedBox(width: 10),
-              Expanded(child: Text(action, style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold, color: wait ? Colors.orange : Colors.green))),
-            ]),
-            const Divider(height: 22),
-            row('Underlying / Index', underlying),
-            row('Option Symbol', optionSymbol),
-            row('Spot', spot),
-            row('LTP', ltp),
-            row('Strike', strike),
-            row('Entry', entry),
-            row('Stop Loss', sl),
-            row('Target', target),
-          ]),
-        ),
-      ),
-      const SizedBox(height: 10),
-      infoCard('ENGINE READOUT', reasons, wait ? Colors.orange : Colors.green),
-      const SizedBox(height: 10),
-      infoCard('Policy','CALL BUY / PUT BUY only when qualifying evidence exists. WAIT means no qualifying trade is being forced.',Colors.blue),
-      const SizedBox(height: 10),
-      FilledButton.icon(onPressed:() async { await fetchTerminal(); await refreshStrategy(); },icon:const Icon(Icons.refresh),label:const Text('REFRESH STRATEGY • LIVE EVIDENCE')),
-      if(strategyRefresh!=null) Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:<Widget>[
-        const Text('STRATEGY ENGINE DETAIL',style:TextStyle(fontSize:18,fontWeight:FontWeight.bold)),
-        row('Trend',strategyRefresh!['trend']), row('PCR',strategyRefresh!['pcr']), row('Support',strategyRefresh!['support']), row('Resistance',strategyRefresh!['resistance']), row('Max Pain',strategyRefresh!['max_pain']),
-        row('Total CE OI',strategyRefresh!['ce_total_oi']), row('Total PE OI',strategyRefresh!['pe_total_oi']),
-        row('Call seller pressure',strategyRefresh!['call_seller_pressure']), row('Put seller pressure',strategyRefresh!['put_seller_pressure']),
-        const SizedBox(height:6), Text('Sources: Angel One API • NSE MCP/engine • Internet evidence',style:TextStyle(fontSize:12,color:Colors.grey)),
-      ]))),
-    ]);
-  }
+    final rawAction = signal?["action"]?.toString() ??
+        signal?["signal_status"]?.toString() ?? "WAIT";
+    final action = rawAction.replaceAll("_", " ").toUpperCase();
+    final wait = action == "WAIT" || action == "NO QUALIFYING TRADE";
+    final color = wait ? Colors.orange : Colors.green;
+    final underlying = (signal?["underlying"] ??
+            signal?["index"] ??
+            signal?["indexName"] ??
+            selectedOptionSymbol)
+        .toString();
+    final optionSymbol = (signal?["optionSymbol"] ??
+            signal?["option_symbol"] ??
+            signal?["tradingSymbol"] ??
+            signal?["symbol"] ??
+            "DATA UNAVAILABLE")
+        .toString();
+    final spot = signal?["spot"] ?? signal?["index_ltp"] ?? "DATA UNAVAILABLE";
+    final ltp = signal?["ltp"] ?? signal?["option_ltp"] ?? "DATA UNAVAILABLE";
+    final strike = signal?["strike"] ?? "DATA UNAVAILABLE";
+    final entry = signal?["entry"] ?? "DATA UNAVAILABLE";
+    final sl = signal?["sl"] ?? signal?["stop_loss"] ?? "DATA UNAVAILABLE";
+    final target = signal?["target"] ?? "DATA UNAVAILABLE";
+    final score = signal?["score"] ?? "DATA UNAVAILABLE";
+    final reasonsRaw = signal?["reasons"];
+    final reasons = reasonsRaw is List
+        ? reasonsRaw.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList()
+        : <String>[];
 
+    return RefreshIndicator(
+      onRefresh: () => refreshCurrentPage(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Expanded(
+                child: Text(
+                  "SIGNALS • LIVE ENGINE",
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ),
+              IconButton(
+                tooltip: "Refresh signal",
+                onPressed: pageBusy ? null : refreshCurrentPage,
+                icon: Icon(pageBusy ? Icons.sync : Icons.refresh),
+              ),
+              IconButton(
+                tooltip: "Clear signal cache",
+                onPressed: pageBusy
+                    ? null
+                    : () => refreshCurrentPage(clearServerCache: true),
+                icon: const Icon(Icons.delete_sweep),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Card(
+            color: color.withValues(alpha: .12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: color, width: 1.4),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Icon(
+                        wait ? Icons.pause_circle_outline : Icons.bolt,
+                        color: color,
+                        size: 34,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          action,
+                          style: TextStyle(
+                            fontSize: 27,
+                            fontWeight: FontWeight.w800,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    "Angel One SmartAPI • paper signals only",
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  const Divider(height: 22),
+                  Row(
+                    children: <Widget>[
+                      Expanded(child: infoCard("INDEX", underlying, Colors.blue)),
+                      const SizedBox(width: 8),
+                      Expanded(child: infoCard("SPOT", spot, Colors.blue)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  row("Option Symbol", optionSymbol),
+                  row("LTP", ltp),
+                  row("Strike", strike),
+                  row("Entry", entry),
+                  row("Stop Loss", sl),
+                  row("Target", target),
+                  row("Score", score),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    "ENGINE RESPONSE",
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  if (reasons.isEmpty)
+                    Text(
+                      wait
+                          ? "No qualifying live signal response yet."
+                          : "Signal received; no explanation list returned.",
+                    )
+                  else
+                    ...reasons.map(
+                      (reason) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const Text("• "),
+                            Expanded(child: Text(reason)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          infoCard(
+            "LIVE STATUS",
+            connection + " • " + liveTransport + " • " + liveLastUpdated,
+            connection == "Connected" ? Colors.green : Colors.orange,
+          ),
+          FilledButton.icon(
+            onPressed: pageBusy ? null : refreshCurrentPage,
+            icon: const Icon(Icons.refresh),
+            label: const Text("REFRESH LIVE SIGNAL"),
+          ),
+        ],
+      ),
+    );
+  }
   Future<void> fetchStrategy() async {
     if (strategyBusy) return;
     strategyBusy = true;
