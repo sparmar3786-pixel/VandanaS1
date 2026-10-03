@@ -574,6 +574,7 @@ def terminal_snapshot():
     last=eng.last if isinstance(eng.last,dict) else {}
     nse_view=eng.nse_view if isinstance(eng.nse_view,dict) else {}
     live_engine=engine_state(client, eng, C.SYMBOL)
+    core_live = market_core_snapshot(C.SYMBOL, True)
     nse_status = "NOT CHECKED"
     if state["nse_mcp_checked"]:
         nse_status = "CONNECTED" if state["nse_mcp_error"] is None else "UNAVAILABLE"
@@ -581,11 +582,17 @@ def terminal_snapshot():
             "connection":{"angel":client.api is not None,"nse":state["nse_error"] is None,"server":True,
                           "last_update":state["last_update"],"error":state["error"],"nse_error":state["nse_error"],
                           "angel_message":state["angel_message"]},
-            "market":{"symbol":live_engine.get("symbol",C.SYMBOL),"spot":live_engine.get("index_ltp"),
-                      "atm":live_engine.get("atm"),"action":live_engine.get("signal_status","WAIT"),
+            "market":{"symbol":live_engine.get("symbol",C.SYMBOL),
+                      "spot":live_engine.get("index_ltp") if live_engine.get("index_ltp") != "DATA UNAVAILABLE" else core_live.get("spot"),
+                      "atm":live_engine.get("atm") if live_engine.get("atm") != "DATA UNAVAILABLE" else core_live.get("atm"),
+                      "action":live_engine.get("signal_status","WAIT"),
                       "ltp":live_engine.get("option_ltp")},
             "engine_state":live_engine,"signals":last,"oi_lab":nse_view,
-            "option_chain":last.get("chain",last.get("opts")),
+            "option_chain":(
+                core_live.get("rows") if core_live.get("data_ok") else
+                last.get("chain",last.get("opts"))
+            ),
+            "mcp_market_core":core_live,
             "charts":{"spot":live_engine.get("index_ltp"),"ltp":live_engine.get("option_ltp"),
                       "timestamp":state["last_update"],"source":"Angel One SmartAPI","endpoint":"/v1/angel/candles"},
             "nse":nse_view,
