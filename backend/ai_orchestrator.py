@@ -139,7 +139,59 @@ def _state_from_text(text):
     return first if first in {"CALL BUY","PUT BUY","WAIT","NO QUALIFYING TRADE"} else ""
 
 def provider_status():
-    return [{"id":p["id"],"name":p["name"],"model":p["model"],"configured":bool(os.getenv(p["env"]))} for p in PROVIDERS]
+    return [{"id":p["id"],"name":p["name"],"model":p["model"],"configured":bool(os.getenv(p["env"])),
+             "env":p["env"]} for p in PROVIDERS]
+
+def _probe_one(p):
+    """Live provider connectivity probe. Never returns or logs the API key."""
+    base={"id":p["id"],"name":p["name"],"model":p["model"],"env":p["env"]}
+    key=os.getenv(p["env"])
+    if not key:
+        return {**base,"status":"not_configured","live":False,"error":"API key is not configured on the server."}
+    started=time.monotonic()
+    probe_text="Reply with exactly: OK"
+    try:
+        if p["kind"]=="openai":
+            r=requests.post("https://api.openai.com/v1/responses",
+                headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},
+                json={"model":p["model"],"input":probe_text,"max_output_tokens":8},
+                timeout=min(TIMEOUT,10))
+            r.raise_for_status()
+        elif p["kind"]=="anthropic":
+            r=requests.post("https://api.anthropic.com/v1/messages",
+                headers={"x-api-key":key,"anthropic-version":"2023-06-01","content-type":"application/json"},
+                json={"model":p["model"],"max_tokens":8,"messages":[{"role":"user","content":probe_text}]},
+                timeout=min(TIMEOUT,10))
+            r.raise_for_status()
+        elif p["kind"]=="gemini":
+            url=f"https://generativelanguage.googleapis.com/v1beta/models/{p['model']}:generateContent?key={key}"
+            r=requests.post(url,headers={"Content-Type":"application/json"},
+                json={"contents":[{"parts":[{"text":probe_text}]}],"generationConfig":{"maxOutputTokens":8}},
+                timeout=min(TIMEOUT,10))
+            r.raise_for_status()
+        else:
+            r=requests.post(p["base"],
+                headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},
+                json={"model":p["model"],"messages":[{"role":"user","content":probe_text}],"temperature":0,"max_tokens":8},
+                timeout=min(TIMEOUT,10))
+            r.raise_for_status()
+        return {**base,"status":"ok","live":True,"error":"","http_status":r.status_code,
+                "elapsed_ms":round((time.monotonic()-started)*1000)}
+    except Exception as e:
+        return {**base,"status":"error","live":False,"error":str(e)[:300],
+                "elapsed_ms":round((time.monotonic()-started)*1000)}
+
+def provider_live_status():
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(PROVIDERS)) as ex:
+        results=list(ex.map(_probe_one,PROVIDERS))
+    return {
+        "providers":results,
+        "configured":sum(1 for x in results if x["status"] != "not_configured"),
+        "live":sum(1 for x in results if x.get("live")),
+        "total":len(results),
+        "six_ai_live":all(x.get("live") for x in results),
+        "checked_at":time.time()
+    }
 
 def _local_fallback(payload):
     """Deterministic offline/local validation using ONLY Build-156 payload data.
