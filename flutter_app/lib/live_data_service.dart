@@ -251,6 +251,27 @@ class LiveDataService {
         timeout: const Duration(seconds: 12),
       );
 
+  Future<Map<String, dynamic>> strategy377() =>
+      getJson('/v1/strategy/377', timeout: const Duration(seconds: 12));
+
+  Future<Map<String, dynamic>> aiContext({
+    String index = 'NIFTY',
+  }) =>
+      getJson(
+        '/v1/ai/context',
+        query: <String, String>{'index': index},
+        timeout: const Duration(seconds: 15),
+      );
+
+  Future<Map<String, dynamic>> aiValidate(
+    Map<String, dynamic> payload,
+  ) =>
+      postJson(
+        '/v1/ai/validate',
+        body: <String, dynamic>{'payload': payload},
+        timeout: const Duration(seconds: 50),
+      );
+
   Future<Map<String, dynamic>> angelIndices() =>
       getJson('/v1/angel/indices', timeout: const Duration(seconds: 8));
 
