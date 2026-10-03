@@ -142,7 +142,7 @@ class _TerminalState extends State<Terminal> {
       if (const {4, 7, 20, 21, 22, 23, 24, 25, 26}.contains(selected)) {
         fetchOptionRows();
       }
-      if (const {13, 24, 26, 28}.contains(selected)) {
+      if (const {3, 13, 24, 26, 28}.contains(selected)) {
         fetchStrategy377();
       }
       if (selected == 9) {
@@ -335,7 +335,11 @@ class _TerminalState extends State<Terminal> {
           await fetchCommodities();
           break;
         case 3:
-          await Future.wait<void>([fetchTerminal(), refreshStrategy()]);
+          await Future.wait<void>([
+            fetchTerminal(),
+            refreshStrategy(),
+            fetchStrategy377(),
+          ]);
           break;
         case 4:
           await Future.wait<void>([fetchOptionRows(), fetchOIBuild()]);
