@@ -26,6 +26,7 @@ from strategy_377 import evaluate_live as evaluate_strategy_377
 
 app=FastAPI(title="NSE Algo Signal API"); app.add_middleware(GZipMiddleware,minimum_size=1024); app.include_router(strategy_router); app.include_router(market_core_router); app.include_router(council_router); app.include_router(alert_router); eng=Engine(); client=AngelClient(); nse=NSEClient(); nse_mcp=NSEMCP()
 state={"error":None,"nse_error":None,"last_update":None,"angel_message":"Not connected","nse_mcp_error":None,"nse_mcp_checked":False}
+quant_live_cache={"key":None,"ts":0.0,"value":None}
 prev_chain={"c":None}; workers_started=False; last_oi_save=0.0
 
 # Two read-only MCP servers live in this same Railway/Fly process.
@@ -442,8 +443,14 @@ def live_news(x_token:str=Header(None),q:str="NIFTY India"):
 @app.get("/v1/quant/live")
 def quant_live(x_token:str=Header(None),index:str="NIFTY"):
     auth(x_token)
-    payload=ai_context(index=index,x_token=x_token)
-    return build_quant_evidence(payload)
+    key=index.upper().strip()
+    now=time.monotonic()
+    if quant_live_cache["key"] == key and quant_live_cache["value"] is not None and now-quant_live_cache["ts"] < 8:
+        return {**quant_live_cache["value"],"cached":True,"cache_age_sec":round(now-quant_live_cache["ts"],1)}
+    payload=ai_context(index=key,x_token=x_token)
+    value=build_quant_evidence(payload)
+    quant_live_cache.update({"key":key,"ts":now,"value":value})
+    return {**value,"cached":False}
 
 @app.get("/v1/live/snapshot")
 def live_snapshot(x_token:str=Header(None)):
