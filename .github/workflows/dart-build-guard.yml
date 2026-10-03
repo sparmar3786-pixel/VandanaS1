@@ -1,0 +1,98 @@
+name: Dart Build Guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'flutter_app/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dart-guard:
+    name: Dart Build Guard (Vandana1 #355 baseline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Vandana1 #355 project structure
+        run: |
+          test -d flutter_app
+          test -f flutter_app/pubspec.yaml
+          echo "Vandana1 #355 baseline structure detected."
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Report Dart and Flutter versions
+        working-directory: flutter_app
+        run: |
+          flutter --version
+          dart --version
+
+      - name: Get dependencies
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Check dependency lockfile
+        working-directory: flutter_app
+        run: |
+          test -f pubspec.lock
+          flutter pub deps --style=compact
+
+      - name: Check Dart formatting
+        working-directory: flutter_app
+        run: |
+          dart format --output=none --set-exit-if-changed lib
+
+      - name: Analyze Dart source
+        working-directory: flutter_app
+        run: |
+          flutter analyze --no-fatal-warnings
+
+      - name: Run Flutter tests
+        working-directory: flutter_app
+        run: |
+          if find test -type f -name '*_test.dart' -print -quit 2>/dev/null | grep -q .; then
+            flutter test
+          else
+            echo "No Flutter test files found; test stage skipped."
+          fi
+
+      - name: Verify Dart compile
+        working-directory: flutter_app
+        run: |
+          flutter build apk --debug --no-pub
+
+      - name: Upload guard diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart-build-guard-diagnostics
+          path: |
+            flutter_app/flutter-analyze.log
+            flutter_app/.dart_tool/package_config.json
+          if-no-files-found: ignore
