@@ -13,6 +13,7 @@ STALE_SEC=float(os.getenv("MARKET_STALE_SEC","15"))
 MCP_AUTH=os.getenv("MCP_AUTH_TOKEN","").strip()
 LOCK=threading.RLock()
 STORE={}
+COMMODITY_STORE={"rows":[],"ts":0.0,"source":None}
 
 def _now(): return time.time()
 
@@ -136,6 +137,11 @@ def get_evidence(index:str="NIFTY")->dict:
     """Read compact engine evidence from the same shared snapshot. No external call."""
     return evidence(index)
 
+@mcp.tool()
+def get_commodities()->dict:
+    """Read the latest shared MCX commodity snapshot populated by the server."""
+    return commodity_snapshot()
+
 def mcp_auth_ok(token):
     return bool(MCP_AUTH) and token==MCP_AUTH
 
@@ -170,5 +176,26 @@ def install_mcp_auth(app):
 def bind_angel_tick(index,strike,side,**data):
     return put(index,strike,side,"angel_ws",**data)
 
+def put_commodities(rows, src="angel_api", ts=None):
+    incoming=float(ts or _now())
+    clean=[dict(r) for r in (rows or []) if isinstance(r,dict)]
+    with LOCK:
+        if incoming < float(COMMODITY_STORE.get("ts",0.0)):
+            return False
+        COMMODITY_STORE.update({"rows":clean,"ts":incoming,"source":src})
+    return True
+
+def commodity_snapshot():
+    now=_now()
+    with LOCK:
+        rows=deepcopy(COMMODITY_STORE["rows"])
+        ts=float(COMMODITY_STORE["ts"])
+        source=COMMODITY_STORE.get("source")
+    age=max(0.0,now-ts) if ts else None
+    return {"rows":rows,"ts":ts,"age_s":round(age,2) if age is not None else None,
+            "stale":not _fresh(ts),"source":source,"data_ok":bool(rows and _fresh(ts))}
+
 def clear():
-    with LOCK: STORE.clear()
+    with LOCK:
+        STORE.clear()
+        COMMODITY_STORE.update({"rows":[],"ts":0.0,"source":None})
