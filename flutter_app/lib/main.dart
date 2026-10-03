@@ -890,7 +890,7 @@ class _TerminalState extends State<Terminal> {
       if (service == null) return;
       final d = await service.optionChain(
         symbol: selectedOptionSymbol,
-        count: 10,
+        count: optionStrikeCount,
       );
       final rows = d['rows'];
       if (mounted) {
