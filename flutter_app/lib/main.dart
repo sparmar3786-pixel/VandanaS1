@@ -84,6 +84,12 @@ class _TerminalState extends State<Terminal> {
   Map<String, dynamic> strategy377Data = <String, dynamic>{};
   Map<String, dynamic> quantData = <String, dynamic>{};
   Map<String, dynamic> aiStatusData = <String, dynamic>{};
+  Map<String, dynamic> mcpContextData = <String, dynamic>{};
+  Map<String, dynamic> mcpCoreData = <String, dynamic>{};
+  Map<String, dynamic> mcpCommodityData = <String, dynamic>{};
+  String marketDataError = '';
+  String commodityDataError = '';
+  String optionDataError = '';
   Map<String,dynamic>? terminalData;
   Timer? timer;
   Timer? marketTimer;
@@ -897,29 +903,73 @@ class _TerminalState extends State<Terminal> {
   }
 
   Future<void> fetchCommodities() async {
-    try {
-      final service = liveDataService;
-      if (service == null) return;
-      final d = await service.angelCommodities();
-      final data = d['data'];
-      final rows = data is Map ? data['fetched'] : null;
-      if (mounted && rows is List) {
-        setState(() => liveCommodities = List<dynamic>.from(rows));
-      }
-    } catch (_) {}
+    final service = liveDataService;
+    if (service == null) return;
+    await Future.wait<void>([
+      () async {
+        try {
+          final d = await service.mcpCommodities();
+          final rows = d['rows'];
+          if (mounted && rows is List && rows.isNotEmpty) {
+            setState(() => mcpCommodityData = d);
+          }
+        } catch (_) {}
+      }(),
+      () async {
+        try {
+          final d = await service.angelCommodities();
+          final data = d['data'];
+          final rows = data is Map ? data['fetched'] : null;
+          if (mounted && rows is List) {
+            setState(() {
+              liveCommodities = List<dynamic>.from(rows);
+              commodityDataError = '';
+            });
+          }
+        } catch (e) {
+          if (mounted) setState(() => commodityDataError = e.toString());
+        }
+      }(),
+    ]);
   }
 
   Future<void> fetchAngelMarket() async {
-    try {
-      final service = liveDataService;
-      if (service == null) return;
-      final d = await service.angelMarket();
-      final data = d['data'];
-      final rows = data is Map ? data['fetched'] : null;
-      if (mounted && rows is List) {
-        setState(() => liveMarket = List<dynamic>.from(rows));
-      }
-    } catch (_) {}
+    final service = liveDataService;
+    if (service == null) return;
+    await Future.wait<void>([
+      () async {
+        try {
+          final d = await service.angelMarket();
+          final data = d['data'];
+          final rows = data is Map ? data['fetched'] : null;
+          if (mounted && rows is List) {
+            setState(() {
+              liveMarket = List<dynamic>.from(rows);
+              marketDataError = '';
+            });
+          }
+        } catch (e) {
+          if (mounted) setState(() => marketDataError = e.toString());
+        }
+      }(),
+      () async {
+        try {
+          final d = await service.mcpContext(index: selectedOptionSymbol);
+          if (mounted) setState(() => mcpContextData = d);
+        } catch (e) {
+          if (mounted) setState(() => mcpContextData = <String,dynamic>{
+            'connected': false,
+            'error': e.toString(),
+          });
+        }
+      }(),
+      () async {
+        try {
+          final d = await service.mcpMarketCore(symbol: selectedOptionSymbol);
+          if (mounted) setState(() => mcpCoreData = d);
+        } catch (_) {}
+      }(),
+    ]);
   }
 
   Future<void> pushProChartData() async {
@@ -964,9 +1014,26 @@ class _TerminalState extends State<Terminal> {
     if (optionBusy) return;
     optionBusy = true;
     if (mounted) setState(() => angelDataBusy = true);
+    final service = liveDataService;
+    if (service == null) {
+      optionBusy = false;
+      return;
+    }
     try {
-      final service = liveDataService;
-      if (service == null) return;
+      try {
+        final mcp = await service.mcpOptionChain(
+          symbol: selectedOptionSymbol,
+          expiry: optionExpiry?.toString(),
+        );
+        if (mounted) {
+          setState(() {
+            mcpContextData = <String,dynamic>{
+              ...mcpContextData,
+              'option_chain': mcp,
+            };
+          });
+        }
+      } catch (_) {}
       final d = await service.optionChain(
         symbol: selectedOptionSymbol,
         count: optionStrikeCount,
@@ -977,6 +1044,9 @@ class _TerminalState extends State<Terminal> {
           liveOptionRows = rows is List ? List<dynamic>.from(rows) : <dynamic>[];
           optionSpot = d['spot'];
           optionExpiry = d['expiry'];
+          optionDataError = liveOptionRows.isEmpty
+              ? 'Angel One returned no option rows.'
+              : '';
           final cached = d['cached'] == true;
           final age = d['cache_age_sec'];
           cacheStatus = cached
@@ -984,8 +1054,8 @@ class _TerminalState extends State<Terminal> {
               : 'Live Angel One snapshot';
         });
       }
-    } catch (_) {
-      // Keep previous live snapshot on transient backend failures.
+    } catch (e) {
+      if (mounted) setState(() => optionDataError = e.toString());
     } finally {
       optionBusy = false;
       if (mounted) setState(() => angelDataBusy = false);
@@ -1038,13 +1108,43 @@ class _TerminalState extends State<Terminal> {
     return Card(child:ListTile(title:Text((q['name']??q['symbol']??'-').toString()),subtitle:Text((q['exchange']??'').toString()+' • '+(q['percentChange']??q['netChange']??'-').toString()),trailing:Text((q['ltp']??'-').toString(),style:TextStyle(color:color,fontSize:18,fontWeight:FontWeight.bold))));
   }
 
-  Widget commodityPage() => ListView(padding:const EdgeInsets.all(12),children:<Widget>[
-    const Text('Commodity • MCX',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)), const SizedBox(height:8),
-    infoCard('Live source','Angel One SmartAPI • MCX current contracts',Colors.blue),
-    ...liveCommodities.map((q)=>Card(child:ListTile(title:Text((q['tradingSymbol']??q['name']??'-').toString()),subtitle:Text('Expiry '+(q['expiry']??'-').toString()+' • OI '+(q['oi']??'-').toString()),trailing:Text((q['ltp']??'-').toString(),style:const TextStyle(fontWeight:FontWeight.bold,fontSize:18))))),
-    if(liveCommodities.isEmpty) infoCard('MCX','Waiting for commodity contracts/live quotes.',Colors.orange),
-    FilledButton.icon(onPressed:fetchCommodities,icon:const Icon(Icons.refresh),label:const Text('REFRESH MCX')),
-  ]);
+  Widget commodityPage() => RefreshIndicator(
+        onRefresh: () => refreshCurrentPage(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(12),
+          children: <Widget>[
+            Row(children: <Widget>[
+              const Expanded(child: Text('Commodity • MCX', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
+              IconButton(onPressed: pageBusy ? null : refreshCurrentPage, icon: const Icon(Icons.refresh)),
+            ]),
+            infoCard('LIVE SOURCE', 'Angel One SmartAPI + local MCP shared MCX store', Colors.blue),
+            if (mcpCommodityData['data_ok'] == true)
+              infoCard('MCP', 'Shared commodity snapshot • ' + (mcpCommodityData['age_s']?.toString() ?? '-') + 's old', Colors.green),
+            if (commodityDataError.isNotEmpty)
+              infoCard('FETCH ERROR', commodityDataError, Colors.red),
+            ...liveCommodities.map((q) => Card(
+              child: ListTile(
+                title: Text((q['tradingSymbol'] ?? q['name'] ?? '-').toString()),
+                subtitle: Text(
+                  'Expiry ' + (q['expiry'] ?? '-').toString() +
+                  ' • OI ' + (q['oi'] ?? '-').toString() +
+                  ' • Vol ' + (q['volume'] ?? '-').toString(),
+                ),
+                trailing: Text((q['ltp'] ?? '-').toString(),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ),
+            )),
+            if (liveCommodities.isEmpty)
+              infoCard('MCX', 'No live commodity quote received yet. Check Angel One session.', Colors.orange),
+            FilledButton.icon(
+              onPressed: pageBusy ? null : refreshCurrentPage,
+              icon: const Icon(Icons.refresh),
+              label: const Text('REFRESH MCX'),
+            ),
+          ],
+        ),
+      );
 
   Widget oiLabPage() {
     num ceOI = 0;
@@ -1310,6 +1410,9 @@ class _TerminalState extends State<Terminal> {
             ),
           ),
           const SizedBox(height: 8),
+          if (optionDataError.isNotEmpty)
+            infoCard("OPTION FETCH", optionDataError, Colors.red),
+          finalOptionMcpCard(),
           if (liveOptionRows.isEmpty)
             infoCard(
               "OPTION CHAIN",
@@ -1340,6 +1443,21 @@ class _TerminalState extends State<Terminal> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget finalOptionMcpCard() {
+    final optionMcp = mcpContextData['option_chain'];
+    if (optionMcp is! Map) {
+      return infoCard("NSE MCP", "Option-chain MCP status not checked yet.", Colors.blue);
+    }
+    final available = optionMcp['available'] == true;
+    return infoCard(
+      "NSE MCP OPTION CHAIN",
+      available
+          ? "Available • tool " + (optionMcp['tool'] ?? '-').toString()
+          : "Official MCP has no usable option-chain tool • Angel One remains primary",
+      available ? Colors.green : Colors.orange,
     );
   }
 
@@ -1503,6 +1621,15 @@ class _TerminalState extends State<Terminal> {
             );
           }),
           const SizedBox(height: 8),
+          if (marketDataError.isNotEmpty)
+            infoCard("FETCH ERROR", marketDataError, Colors.red),
+          infoCard(
+            "NSE MCP",
+            mcpContextData['connected'] == true
+                ? "Connected • " + (mcpContextData['data'] is List ? (mcpContextData['data'] as List).length.toString() : "0") + " live tool responses"
+                : "MCP unavailable • " + (mcpContextData['error'] ?? "not checked").toString(),
+            mcpContextData['connected'] == true ? Colors.green : Colors.orange,
+          ),
           infoCard("TRANSPORT", liveTransport + " • " + liveLastUpdated, Colors.blue),
         ],
       ),
