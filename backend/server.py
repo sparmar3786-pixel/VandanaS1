@@ -193,6 +193,14 @@ def angel_market(x_token:str=Header(None)):
     except Exception as e:
         raise HTTPException(502,str(e))
 
+@app.post("/v1/angel/cache/clear")
+def angel_clear_cache(x_token:str=Header(None)):
+    auth(x_token); angel_required()
+    try:
+        return client.clear_market_cache()
+    except Exception as e:
+        raise HTTPException(502, f"Market cache reset failed: {e}")
+
 @app.get("/v1/angel/candles")
 def angel_candles(exchange:str="NSE",token:str="99926000",interval:str="FIVE_MINUTE",days:int=1,x_token:str=Header(None)):
     auth(x_token); angel_required()
