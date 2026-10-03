@@ -283,7 +283,6 @@ class _TerminalState extends State<Terminal> {
             : 'Not connected';
         liveLastUpdated = DateTime.now().toLocal().toString().substring(11, 19);
       });
-      if (angel) await fetchAngelMarket();
     } catch (_) {
       if (mounted) setState(() => connection = 'Backend not connected');
     }
@@ -621,9 +620,7 @@ class _TerminalState extends State<Terminal> {
             .replaceAll(" ", "");
         if (name.contains(needle) || needle.contains(name)) return m;
       }
-      return liveIndices.isNotEmpty && liveIndices.first is Map
-          ? Map<String, dynamic>.from(liveIndices.first as Map)
-          : null;
+      return null;
     }
 
     final primaryIndex = liveIndex("NIFTY");
@@ -633,6 +630,9 @@ class _TerminalState extends State<Terminal> {
     final primaryChange = primaryIndex is Map
         ? value(primaryIndex["percentChange"] ?? primaryIndex["netChange"])
         : unavailable;
+    final primaryChangeNumber = double.tryParse(
+      primaryChange.replaceAll("%", "").replaceAll(",", "").trim(),
+    );
 
     final trend = value(e["trend"]);
     final action = value(e["signal_status"]);
@@ -724,7 +724,9 @@ class _TerminalState extends State<Terminal> {
                 child: infoCard(
                   "CHANGE",
                   primaryChange,
-                  primaryChange.contains("-") ? Colors.red : Colors.green,
+                  primaryChangeNumber != null && primaryChangeNumber < 0
+                      ? Colors.red
+                      : Colors.green,
                 ),
               ),
             ],
