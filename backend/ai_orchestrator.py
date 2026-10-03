@@ -8,6 +8,7 @@ import re
 import time
 import requests
 from openai import OpenAI
+from quant.live import build_quant_evidence
 import json
 import hashlib
 import threading
@@ -256,6 +257,7 @@ def _local_fallback(payload):
 
 def validate_all(payload):
     payload=dict(payload or {})
+    payload["quant_evidence"] = build_quant_evidence(payload)
     payload["nse_official_site"]=_nse_site_evidence(payload)
     payload.setdefault("ai_sources",{})["nse_official_site"]=NSE_SITE_URL
     raw=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str)
