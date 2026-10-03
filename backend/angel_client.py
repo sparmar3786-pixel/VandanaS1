@@ -421,8 +421,15 @@ class AngelClient:
             raise
 
     def snapshot(self):
-        if self.api is None: raise RuntimeError("Angel session is not connected.")
-        spot=self.spot(); atm=min(self.strikes,key=lambda s:abs(s-spot)); i=self.strikes.index(atm)
+        if self.api is None:
+            raise RuntimeError("Angel session is not connected.")
+        # Cache reset may clear the instrument chain; rebuild it before
+        # calculating ATM so a hard refresh never breaks the dashboard.
+        if not self.chain or not self.strikes:
+            self.build_chain(self.chain_symbol)
+        spot = self.spot()
+        atm = min(self.strikes, key=lambda s: abs(s - spot))
+        i = self.strikes.index(atm)
         sel=self.strikes[max(0,i-C.N):i+C.N+1]; tok2key={}
         for s in sel:
             for t in ("CE","PE"):
