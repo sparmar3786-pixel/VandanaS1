@@ -145,6 +145,9 @@ class _TerminalState extends State<Terminal> {
       if (const {13, 24, 26, 28}.contains(selected)) {
         fetchStrategy377();
       }
+      if (selected == 9) {
+        fetchAngelMarket();
+      }
       if (selected == 25) {
         fetchQuant();
       }
@@ -2046,53 +2049,171 @@ class _TerminalState extends State<Terminal> {
     ]);
 
     Widget heatmap() {
-      final sorted = List<Map<String,dynamic>>.from(rows)..sort((a,b) => (double.tryParse((a["strike"] ?? "0").toString()) ?? 0).compareTo(double.tryParse((b["strike"] ?? "0").toString()) ?? 0));
+      final grouped = <double, Map<String, dynamic>>{};
+      for (final r in rows) {
+        final strike = double.tryParse((r["strike"] ?? "").toString());
+        if (strike == null) continue;
+        final bucket = grouped.putIfAbsent(strike, () => <String, dynamic>{});
+        bucket[(r["type"] ?? "").toString().toUpperCase()] = r;
+      }
+      final strikes = grouped.keys.toList()..sort();
+      num maxOi = 0;
+      for (final strike in strikes) {
+        final bucket = grouped[strike]!;
+        for (final side in const ["CE", "PE"]) {
+          final data = bucket[side];
+          final oi = num.tryParse((data is Map ? data["oi"] : 0).toString()) ?? 0;
+          if (oi > maxOi) maxOi = oi;
+        }
+      }
+      final liveSpot = double.tryParse((optionSpot ?? "").toString());
+
+      Widget heatCell(dynamic data, String side) {
+        final oi = num.tryParse((data is Map ? data["oi"] : 0).toString()) ?? 0;
+        final ratio = maxOi > 0 ? (oi / maxOi).clamp(0.0, 1.0) : 0.0;
+        final color = side == "CE" ? Colors.green : Colors.red;
+        return Expanded(
+          child: Container(
+            margin: const EdgeInsets.all(2),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .08 + (.42 * ratio)),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: color.withValues(alpha: .25)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                Text(side, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+                Text(val(data is Map ? data["oi"] : null), style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text("Δ " + val(data is Map ? (data["oiChangePct"] ?? data["oi_change"]) : null), style: const TextStyle(fontSize: 10)),
+              ],
+            ),
+          ),
+        );
+      }
+
       return Column(children: <Widget>[
-        chipIndexSelector(), const SizedBox(height: 8),
-        Row(children: <Widget>[Expanded(child: infoCard("SPOT", val(optionSpot), Colors.blue)), Expanded(child: infoCard("EXPIRY", val(optionExpiry), Colors.purple))]),
-        Card(child: Padding(padding: const EdgeInsets.all(10), child: Column(children: <Widget>[
-          const Row(children: <Widget>[Expanded(child: Text("CE OI / Δ", style: TextStyle(fontWeight: FontWeight.bold))), Expanded(child: Center(child: Text("STRIKE", style: TextStyle(fontWeight: FontWeight.bold)))), Expanded(child: Text("PE OI / Δ", textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.bold)))]),
-          const Divider(),
-          ...sorted.take(25).map((r) {
-            final side = (r["type"] ?? "").toString().toUpperCase();
-            final strike = val(r["strike"]);
-            return ListTile(
-              dense: true, contentPadding: EdgeInsets.zero,
-              title: Text("${side == "CE" ? "CALL" : "PUT"} $strike"),
-              subtitle: Text("LTP ${val(r["ltp"])} • OI ${val(r["oi"])} • Δ ${val(r["oiChangePct"] ?? r["oi_change"])}"),
-              trailing: Chip(label: Text(side)),
-            );
-          }),
-          if (rows.isEmpty) const Padding(padding: EdgeInsets.all(18), child: Text("LIVE OI DATA UNAVAILABLE")),
-        ]))),
+        chipIndexSelector(),
+        const SizedBox(height: 8),
+        Row(children: <Widget>[
+          Expanded(child: infoCard("SPOT", val(optionSpot), Colors.blue)),
+          const SizedBox(width: 8),
+          Expanded(child: infoCard("EXPIRY", val(optionExpiry), Colors.purple)),
+          const SizedBox(width: 8),
+          Expanded(child: infoCard("OI ROWS", strikes.length.toString(), Colors.orange)),
+        ]),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(children: <Widget>[
+                  Expanded(child: Text("CALL OI", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
+                  Expanded(child: Center(child: Text("STRIKE", style: TextStyle(fontWeight: FontWeight.bold))),),
+                  Expanded(child: Text("PUT OI", textAlign: TextAlign.right, style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                ]),
+              ),
+              const Divider(height: 1),
+              ...strikes.take(25).map((strike) {
+                final bucket = grouped[strike]!;
+                final atm = liveSpot != null && (strike - liveSpot).abs() <= 20;
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  decoration: BoxDecoration(
+                    color: atm ? Colors.amber.withValues(alpha: .10) : null,
+                    borderRadius: BorderRadius.circular(9),
+                    border: atm ? Border.all(color: Colors.amber.withValues(alpha: .35)) : null,
+                  ),
+                  child: Row(children: <Widget>[
+                    heatCell(bucket["CE"], "CE"),
+                    Expanded(child: Center(child: Text(atm ? "ATM " + strike.toStringAsFixed(0) : strike.toStringAsFixed(0), style: TextStyle(fontWeight: FontWeight.bold, color: atm ? Colors.amber.shade700 : null)))),
+                    heatCell(bucket["PE"], "PE"),
+                  ]),
+                );
+              }),
+              if (strikes.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Text("LIVE OI DATA UNAVAILABLE")),
+            ]),
+          ),
+        ),
+        infoCard("HEAT SCALE", "Higher OI = stronger cell intensity. ATM strike is highlighted.", Colors.blue),
       ]);
     }
-
     Widget premiumVolume() {
-      num ceVol = 0, peVol = 0; num cePrem = 0, pePrem = 0;
+      num ceVol = 0, peVol = 0;
+      Map<String, dynamic>? topCe;
+      Map<String, dynamic>? topPe;
       for (final r in rows) {
         final volume = num.tryParse((r["volume"] ?? "0").toString()) ?? 0;
-        final ltp = num.tryParse((r["ltp"] ?? "0").toString()) ?? 0;
-        if ((r["type"] ?? "").toString().toUpperCase() == "CE") { ceVol += volume; cePrem += ltp; }
-        if ((r["type"] ?? "").toString().toUpperCase() == "PE") { peVol += volume; pePrem += ltp; }
+        final side = (r["type"] ?? "").toString().toUpperCase();
+        if (side == "CE") {
+          ceVol += volume;
+          final currentTop = num.tryParse((topCe?["volume"] ?? "0").toString()) ?? 0;
+          if (topCe == null || volume > currentTop) topCe = r;
+        } else if (side == "PE") {
+          peVol += volume;
+          final currentTop = num.tryParse((topPe?["volume"] ?? "0").toString()) ?? 0;
+          if (topPe == null || volume > currentTop) topPe = r;
+        }
       }
-      final spread = (num.tryParse((ceAtm?["ltp"] ?? "0").toString()) ?? 0) - (num.tryParse((peAtm?["ltp"] ?? "0").toString()) ?? 0);
+      final total = ceVol + peVol;
+      final ceRatio = total > 0 ? ceVol / total : 0.0;
+      final peRatio = total > 0 ? peVol / total : 0.0;
+      final ceLtp = num.tryParse((ceAtm?["ltp"] ?? "0").toString()) ?? 0;
+      final peLtp = num.tryParse((peAtm?["ltp"] ?? "0").toString()) ?? 0;
+      final spread = ceLtp - peLtp;
+
       return Column(children: <Widget>[
-        chipIndexSelector(), const SizedBox(height: 8),
+        chipIndexSelector(),
+        const SizedBox(height: 8),
         Row(children: <Widget>[
           Expanded(child: infoCard("CE VOLUME", ceVol.toStringAsFixed(0), Colors.green)),
-          const SizedBox(width: 8), Expanded(child: infoCard("PE VOLUME", peVol.toStringAsFixed(0), Colors.red)),
-          const SizedBox(width: 8), Expanded(child: infoCard("ATM SPREAD", spread.toStringAsFixed(2), Colors.blue)),
+          const SizedBox(width: 8),
+          Expanded(child: infoCard("PE VOLUME", peVol.toStringAsFixed(0), Colors.red)),
+          const SizedBox(width: 8),
+          Expanded(child: infoCard("ATM SPREAD", spread.toStringAsFixed(2), Colors.blue)),
         ]),
-        Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          const Text("ATM PREMIUM", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          row("CE LTP", val(ceAtm?["ltp"])), row("PE LTP", val(peAtm?["ltp"])),
-          row("CE IV", val(ceAtm?["iv"])), row("PE IV", val(peAtm?["iv"])),
-          row("Total CE Premium samples", cePrem.toStringAsFixed(2)), row("Total PE Premium samples", pePrem.toStringAsFixed(2)),
-        ]))),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+              const Text("VOLUME FLOW", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              Row(children: <Widget>[
+                const SizedBox(width: 34, child: Text("CE")),
+                Expanded(child: LinearProgressIndicator(value: ceRatio)),
+                const SizedBox(width: 10),
+                Text((ceRatio * 100).toStringAsFixed(1) + "%"),
+              ]),
+              const SizedBox(height: 9),
+              Row(children: <Widget>[
+                const SizedBox(width: 34, child: Text("PE")),
+                Expanded(child: LinearProgressIndicator(value: peRatio)),
+                const SizedBox(width: 10),
+                Text((peRatio * 100).toStringAsFixed(1) + "%"),
+              ]),
+            ]),
+          ),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+              const Text("ATM PREMIUM", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              row("CE LTP", val(ceAtm?["ltp"])),
+              row("PE LTP", val(peAtm?["ltp"])),
+              row("CE IV", val(ceAtm?["iv"])),
+              row("PE IV", val(peAtm?["iv"])),
+              row("Highest CE volume", val(topCe?["volume"])),
+              row("Highest PE volume", val(topPe?["volume"])),
+              row("Premium spread", spread.toStringAsFixed(2)),
+            ]),
+          ),
+        ),
+        infoCard("LIVE SOURCE", "Angel One SmartAPI • " + rows.length.toString() + " live option rows", Colors.blue),
       ]);
     }
-
     Widget greeks() => Column(children: <Widget>[
       chipIndexSelector(), const SizedBox(height: 8),
       Row(children: <Widget>[
