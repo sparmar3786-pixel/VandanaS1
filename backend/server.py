@@ -393,6 +393,28 @@ def ai_validate(body:AIValidationRequest,x_token:str=Header(None)):
                 "configured":0,"successful":0,"parsed_states":0,"total":6,"providers":[],
                 "local_fallback":{"status":"error_local","text":str(e)[:300]}}
 
+@app.get("/v1/live/news")
+def live_news(x_token:str=Header(None),q:str="NIFTY India"):
+    auth(x_token)
+    import xml.etree.ElementTree as ET
+    import urllib.parse
+    try:
+        url="https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q,"hl":"en-IN","gl":"IN","ceid":"IN:en"})
+        r=requests.get(url,headers={"User-Agent":"ParmarTrading/1.0"},timeout=8)
+        r.raise_for_status()
+        root=ET.fromstring(r.text)
+        items=[]
+        for item in root.findall("./channel/item")[:20]:
+            title=(item.findtext("title") or "").strip()
+            link=(item.findtext("link") or "").strip()
+            pub=(item.findtext("pubDate") or "").strip()
+            source=item.find("source")
+            source_name=(source.text or "").strip() if source is not None else ""
+            items.append({"title":title,"link":link,"published":pub,"source":source_name})
+        return {"connected":True,"query":q,"count":len(items),"items":items,"fetched_at":time.time()}
+    except Exception as e:
+        return {"connected":False,"query":q,"count":0,"items":[],"error":str(e)[:300],"fetched_at":time.time()}
+
 @app.get("/v1/live/snapshot")
 def live_snapshot(x_token:str=Header(None)):
     auth(x_token)
