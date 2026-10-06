@@ -26,11 +26,31 @@ class _ServerAiPageState extends State<ServerAiPage> {
   Map<String, dynamic> snapshot = <String, dynamic>{};
   Map<String, dynamic> providerStatus = <String, dynamic>{};
   String status = 'Ready • server-side six-AI';
+  String pocketPalAnswer = '';
+  String pocketPalError = '';
 
   LiveDataService get service =>
       LiveDataService(widget.backendUrl, widget.apiToken);
 
   String get symbol => widget.symbol.toUpperCase();
+
+  final TextEditingController _pocketController = TextEditingController(text: 'Analyze the current market snapshot and explain the key risks.');
+
+  Future<void> askPocketPal() async {
+    final prompt = _pocketController.text.trim();
+    if (prompt.isEmpty) return;
+    setState(() { pocketPalError = ''; status = 'PocketPal request...'; });
+    try {
+      final d = await service.pocketpalChat(prompt: prompt);
+      if (!mounted) return;
+      setState(() { pocketPalAnswer = (d['response'] ?? '').toString(); status = 'PocketPal response received'; });
+    } catch (e) {
+      if (mounted) setState(() { pocketPalError = e.toString(); status = 'PocketPal unavailable'; });
+    }
+  }
+
+  @override
+  void dispose() { _pocketController.dispose(); super.dispose(); }
 
   @override
   void initState() {
@@ -214,6 +234,30 @@ class _ServerAiPageState extends State<ServerAiPage> {
                 ),
               ),
             ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('POCKETPAL-AI', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  const Text('Optional local/private AI via backend /api/chat proxy.'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _pocketController,
+                    minLines: 1,
+                    maxLines: 4,
+                    decoration: const InputDecoration(labelText: 'Ask PocketPal', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(onPressed: busy ? null : askPocketPal, icon: const Icon(Icons.chat), label: const Text('ASK POCKETPAL')),
+                  if (pocketPalError.isNotEmpty) Text(pocketPalError, style: const TextStyle(color: Colors.red)),
+                  if (pocketPalAnswer.isNotEmpty) ...<Widget>[const SizedBox(height: 8), Text(pocketPalAnswer)],
+                ],
+              ),
+            ),
+          ),
           ...rows.map((raw) {
             final m = raw is Map
                 ? Map<String, dynamic>.from(raw)
