@@ -300,6 +300,21 @@ class LiveDataService {
         timeout: const Duration(seconds: 15),
       );
 
+  Future<Map<String, dynamic>> pocketpalChat({
+    required String prompt,
+    bool stream = false,
+    double temperature = 0.7,
+  }) =>
+      postJson(
+        '/v1/ai/pocketpal',
+        body: <String, dynamic>{
+          'prompt': prompt,
+          'stream': stream,
+          'temperature': temperature,
+        },
+        timeout: const Duration(seconds: 30),
+      );
+
   Future<Map<String, dynamic>> aiValidate(
     Map<String, dynamic> payload,
   ) =>
