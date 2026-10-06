@@ -172,6 +172,30 @@ def _state_from_text(text):
     first=text.splitlines()[0].strip().upper() if text.splitlines() else ""
     return first if first in {"CALL BUY","PUT BUY","WAIT","NO QUALIFYING TRADE"} else ""
 
+POCKETPAL_URL = os.getenv("POCKETPAL_URL", "").strip().rstrip("/")
+POCKETPAL_TOKEN = os.getenv("POCKETPAL_TOKEN", "").strip()
+
+def pocketpal_config():
+    return {"configured": bool(POCKETPAL_URL), "url": POCKETPAL_URL, "auth_configured": bool(POCKETPAL_TOKEN)}
+
+def pocketpal_chat(prompt: str, stream: bool = False, temperature: float = 0.7):
+    """Call an optional PocketPal-compatible REST API without exposing its token to the APK."""
+    prompt = str(prompt or "").strip()
+    if not prompt:
+        raise ValueError("PocketPal prompt is required.")
+    if not POCKETPAL_URL:
+        raise RuntimeError("POCKETPAL_URL is not configured on the backend.")
+    payload = {"prompt": prompt, "stream": bool(stream), "temperature": max(0.0, min(float(temperature), 2.0))}
+    headers = {"Content-Type": "application/json"}
+    if POCKETPAL_TOKEN:
+        headers["Authorization"] = "Bearer " + POCKETPAL_TOKEN
+    response = requests.post(POCKETPAL_URL + "/api/chat", headers=headers, json=payload, timeout=TIMEOUT)
+    response.raise_for_status()
+    data = response.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("PocketPal returned a non-object JSON response.")
+    return data
+
 def provider_status():
     return [{"id":p["id"],"name":p["name"],"model":p["model"],"configured":bool(os.getenv(p["env"])),
              "env":p["env"]} for p in PROVIDERS]
