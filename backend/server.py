@@ -12,7 +12,7 @@ from nse_client import NSEClient
 import nse_features
 from nse_mcp import NSEMCP,result_to_csv
 from ai_model import p_up,label
-from ai_orchestrator import provider_status, provider_live_status, validate_all, NSE_SITE_URL, _nse_site_evidence
+from ai_orchestrator import provider_status, provider_live_status, validate_all, NSE_SITE_URL, _nse_site_evidence, pocketpal_chat, pocketpal_config
 from market_core import router as market_core_router, ingest_chain, put_spot, evidence as market_evidence, mount_mcp, install_mcp_auth, put_commodities, commodity_snapshot, snapshot as market_core_snapshot
 from strategy_api import router as strategy_router
 from council import router as council_router
@@ -39,6 +39,11 @@ install_mcp_auth(app)
 
 class AIValidationRequest(BaseModel):
     payload:dict = {}
+
+class PocketPalRequest(BaseModel):
+    prompt: str
+    stream: bool = False
+    temperature: float = 0.7
 
 class AngelLoginRequest(BaseModel):
     # The APK uses clientId/pin/totp/apiKey. clientCode is accepted as a
@@ -469,6 +474,19 @@ def ai_context(index:str="NIFTY",x_token:str=Header(None)):
     quant_payload["quant_evidence"]=build_quant_evidence(quant_payload)
     return quant_payload
     return quant_payload
+
+@app.get("/v1/ai/pocketpal/status")
+def pocketpal_status():
+    cfg = pocketpal_config()
+    return {"configured": cfg["configured"], "auth_configured": cfg["auth_configured"], "endpoint": "/api/chat" if cfg["configured"] else ""}
+
+@app.post("/v1/ai/pocketpal")
+def pocketpal_proxy(req: PocketPalRequest):
+    try:
+        data = pocketpal_chat(req.prompt, req.stream, req.temperature)
+        return {"ok": True, "response": data.get("response", ""), "tokens_used": data.get("tokens_used"), "duration": data.get("duration"), "raw": data}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="PocketPal request failed: " + str(exc)[:300])
 @app.get("/v1/ai/provider-status")
 def ai_provider_status(x_token:str=Header(None),probe:bool=False):
     """Safe AI provider status. probe=true performs real minimal API calls; secrets are never returned."""
