@@ -23,8 +23,9 @@ from engine_contract import engine_state, strategy_state
 from angel_data_layer import build_ai_read
 from quant.live import build_quant_evidence
 from strategy_377 import evaluate_live as evaluate_strategy_377
+from hft_api import router as hft_router
 
-app=FastAPI(title="NSE Algo Signal API"); app.add_middleware(GZipMiddleware,minimum_size=1024); app.include_router(strategy_router); app.include_router(market_core_router); app.include_router(council_router); app.include_router(alert_router); eng=Engine(); client=AngelClient(); nse=NSEClient(); nse_mcp=NSEMCP()
+app=FastAPI(title="NSE Algo Signal API"); app.add_middleware(GZipMiddleware,minimum_size=1024); app.include_router(strategy_router); app.include_router(market_core_router); app.include_router(council_router); app.include_router(alert_router); app.include_router(hft_router); eng=Engine(); client=AngelClient(); nse=NSEClient(); nse_mcp=NSEMCP()
 state={"error":None,"nse_error":None,"last_update":None,"angel_message":"Not connected","nse_mcp_error":None,"nse_mcp_checked":False}
 quant_live_cache={"key":None,"ts":0.0,"value":None}
 mcp_context_cache={"key":None,"ts":0.0,"value":None}
